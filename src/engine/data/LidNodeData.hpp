@@ -49,6 +49,23 @@ struct LidNodeVegetation {
     int evap_while_ponding = 1, infilmodel = 1;
 };
 
+/// UrbanEVA irrigation on a storage-node LID (``NAME IRRIGATION DepletionFact
+/// IrrigationCoeff Pattern SourceNode [TriggerHour]``): once a day at the
+/// trigger hour, if the MEDIA water is below WP + d·(FC − WP) and the MONTHLY
+/// pattern is > 0, a dose (c·FC − θ_thr)·thickness·area·pattern is drawn from
+/// the source storage node and applied at the top of the column. Booked:
+/// the source loses the volume the LID gains, so routing continuity closes.
+struct LidNodeIrrigation {
+    bool enabled = false;
+    double depletion_fact = 0.0;   ///< trigger: fraction of plant-available water drawn down
+    double irrigation_coeff = 0.0; ///< target: fraction of field capacity to refill to
+    std::string pattern;           ///< [PATTERNS] MONTHLY name
+    int pattern_idx = -1;
+    std::string source;            ///< storage node supplying the water
+    int source_idx = -1;
+    int trigger_hour = 0;          ///< local hour the daily check runs (0-23)
+};
+
 struct LidNodeCell {
     double bottom = 0.0, top = 0.0; // feet above invert
     double geometric_volume = 0.0, area = 0.0;
@@ -87,6 +104,9 @@ struct LidNodeState {
     double canopy_volume = 0.0;    ///< ft3, intercepted water on the vegetation
     double canopy_evap_total = 0.0;///< ft3, cumulative canopy (interception) evaporation
     double transp_total = 0.0;     ///< ft3, cumulative media evaporation under the vegetation law
+    double irrigation_total = 0.0; ///< ft3, cumulative irrigation applied
+    int irrigation_events = 0;     ///< number of doses
+    long irrigation_last_day = -1; ///< whole-day index of the last daily check
 };
 struct LidNodeConfig {
     int control = -1;

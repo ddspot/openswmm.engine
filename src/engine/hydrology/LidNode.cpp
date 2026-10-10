@@ -22,6 +22,13 @@ double rainDepth(const SimulationContext& ctx) {
 }
 
 // ---- UrbanEVA vegetation law on a storage-node LID -------------------------
+const LidNodeIrrigation* irrigation(const SimulationContext& ctx, int control) {
+    if (control < 0) return nullptr;
+    const auto& vs = ctx.lid_controls.node_irrigation;
+    const auto u = static_cast<std::size_t>(control);
+    return u < vs.size() && vs[u].enabled ? &vs[u] : nullptr;
+}
+
 const LidNodeVegetation* vegetation(const SimulationContext& ctx, int control) {
     if (control < 0) return nullptr;
     const auto& vs = ctx.lid_controls.node_vegetation;
@@ -399,6 +406,19 @@ void initialize(SimulationContext& ctx) {
                 if (veg.kc_pattern_idx < 0 || ctx.patterns.types[static_cast<std::size_t>(veg.kc_pattern_idx)] != 0)
                     ctx.errors.push_back("LID control " + ctx.lid_controls.names[uc] + ": VEGETAT crop-factor pattern " + veg.kc_pattern + " is not a MONTHLY pattern");
             }
+            auto& is = ctx.lid_controls.node_irrigation;
+            if (uc < is.size() && is[uc].enabled) {
+                auto& irr = is[uc];
+                irr.pattern_idx = ctx.patterns.find(irr.pattern);
+                if (irr.pattern_idx < 0 || ctx.patterns.types[static_cast<std::size_t>(irr.pattern_idx)] != 0)
+                    ctx.errors.push_back("LID control " + ctx.lid_controls.names[uc] + ": IRRIGATION pattern " + irr.pattern + " is not a MONTHLY pattern");
+                irr.source_idx = ctx.node_names.find(irr.source);
+                if (irr.source_idx < 0 || ctx.nodes.type[static_cast<std::size_t>(irr.source_idx)] != NodeType::STORAGE)
+                    ctx.errors.push_back("LID control " + ctx.lid_controls.names[uc] + ": IRRIGATION source " + irr.source + " is not a [STORAGE] node");
+                else if (irr.source_idx == n)
+                    ctx.errors.push_back("LID control " + ctx.lid_controls.names[uc] + ": IRRIGATION source cannot be the LID node itself");
+            }
+            state.irrigation_total = 0.0; state.irrigation_events = 0; state.irrigation_last_day = -1;
         }
         if (stack.front().flow.enabled) {
             state.richards = true;
@@ -492,6 +512,51 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
                 g = std::sqrt(std::clamp(w / veg->nfc, 0.0, 1.0));
             }
             soil_factor = scf + (1.0 - scf) * g;
+        }
+        // UrbanEVA irrigation: one daily check at the trigger hour on the MEDIA
+        // water; the dose comes out of the source storage node and goes in at
+        // the top of the column (capacity-limited, the rest stays mobile).
+        double irrigated = 0.0;
+        if (const LidNodeIrrigation* irr = irrigation(ctx, st.lid[r].control)) {
+            const long day = static_cast<long>(std::floor(ctx.current_date));
+            int hh = 0, mi = 0, ss = 0;
+            datetime::decodeTime(ctx.current_date - std::floor(ctx.current_date), hh, mi, ss);
+            if (day != state.irrigation_last_day && hh >= irr->trigger_hour) {
+                state.irrigation_last_day = day;
+                const int month0 = datetime::monthOfYear(ctx.current_date) - 1;
+                const double pat = monthlyPatternFactor(ctx, irr->pattern_idx, month0);
+                double wvol = 0.0, vol = 0.0, fc = 0.0, wp = 0.0, thick = 0.0; bool have = false;
+                for (const auto& c : state.cells) if (c.kind == LidNodeLayerKind::Media && c.geometric_volume > 0.0) {
+                    if (!have) { fc = c.field_capacity; wp = c.wilting_point; have = true; }
+                    wvol += c.theta * c.geometric_volume; vol += c.geometric_volume; thick += c.top - c.bottom;
+                }
+                if (have && vol > 0.0 && pat > 0.0 && irr->source_idx >= 0) {
+                    const double theta = wvol / vol;
+                    const double thr = wp + irr->depletion_fact * (fc - wp);
+                    if (theta < thr) {
+                        const double dose = std::max(0.0, irr->irrigation_coeff * fc - thr) * thick * first.area * pat;
+                        const auto src = static_cast<std::size_t>(irr->source_idx);
+                        const double take = std::min(dose, std::max(0.0, ctx.nodes.volume[src]));
+                        if (take > 0.0) {
+                            ctx.nodes.volume[src] -= take;
+                            ctx.nodes.depth[src] = node::getDepth(ctx.nodes, static_cast<int>(src), ctx.nodes.volume[src],
+                                                                  &ctx.tables, us, &ctx.node_subtypes);
+                            ctx.nodes.head[src] = ctx.nodes.invert_elev[src] + ctx.nodes.depth[src];
+                            double left = take;
+                            for (auto& c : state.cells) {       // top-down, up to porosity
+                                if (left <= 0.0) break;
+                                const double room = std::max(0.0, (c.porosity - c.theta) * c.geometric_volume);
+                                const double put = std::min(room, left);
+                                if (c.geometric_volume > 0.0) c.theta += put / c.geometric_volume;
+                                left -= put;
+                            }
+                            irrigated = take;                   // `left` stays mobile node water
+                            state.irrigation_total += take; ++state.irrigation_events;
+                            state.treated_volume += take - left;
+                        }
+                    }
+                }
+            }
         }
         // Lateral inflows enter the top of the column — through the canopy
         // first (Braden I-3: the store fills before any water passes). Saturated
@@ -610,7 +675,7 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
         if (veg != nullptr) state.transp_total += state.evap_volume - evap_before;
         state.held_volume = state.canopy_volume;
         for (const auto& c : state.cells) state.held_volume += c.theta * c.geometric_volume;
-        ctx.nodes.volume[n] += before + capture + intercepted - state.evap_volume - state.held_volume;
+        ctx.nodes.volume[n] += before + capture + intercepted + irrigated - state.evap_volume - state.held_volume;
         // This is an internal redistribution before the routing step, so both
         // storage capacity and the initial hydraulic head must be refreshed.
         ctx.nodes.full_volume[n] = 0.0;
