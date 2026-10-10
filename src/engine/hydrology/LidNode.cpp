@@ -468,7 +468,7 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
         // UrbanEVA vegetation law (when the control carries a VEGETAT row):
         // Ep = E_pot · Ks(season) · Kc · Kc_pattern[month]; canopy Smax = SL · LAI(month),
         // SCF = 1 − 0.7^LAI; demand = Ep · [SCF (Et-1) + (1 − SCF) · sqrt(min(w/nFC, 1)) (Es-2)]
-        // with w the relative plant-available water of the MEDIA. Replaces Fevap.
+        // with w the relative plant-available water of the MEDIA; Fevap multiplies.
         const LidNodeVegetation* veg = vegetation(ctx, st.lid[r].control);
         double ep_rate = evaporation * st.evap_frac[r];
         double smax_vol = 0.0, scf = 0.0, soil_factor = 1.0;
@@ -477,7 +477,8 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
             const int doy = datetime::dayOfYear(ctx.current_date);
             const double lai = veg->laimean * monthlyPatternFactor(ctx, veg->lai_pattern_idx, month0);
             const double kc = veg->cropfactor * monthlyPatternFactor(ctx, veg->kc_pattern_idx, month0);
-            ep_rate = evaporation * seasonalKs(veg->ks, doy) * kc;
+            // Fevap stays a multiplier on top of the vegetation law (owner decision).
+            ep_rate = evaporation * st.evap_frac[r] * seasonalKs(veg->ks, doy) * kc;
             smax_vol = veg->sl / rainDepth(ctx) * lai * first.area;
             scf = lai > 0.0 ? 1.0 - std::pow(0.7, lai) : 0.0;
             double wvol = 0.0, vol = 0.0, fc = 0.0, wp = 0.0; bool have = false;

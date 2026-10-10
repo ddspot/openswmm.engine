@@ -30,8 +30,8 @@ struct LidNodeLayer {
 /// patterns, Braden interception (I-3) with wetted-fraction canopy
 /// evaporation (Ei-2), unstressed transpiration (Et-1) and square-root
 /// soil-moisture stress (Es-2) on the MEDIA water, seasonal Ks evapfactors
-/// (``NAME EVAPFACTORS winter spring summer``). Replaces the storage node's
-/// Fevap scaling of the climate rate when present.
+/// (``NAME EVAPFACTORS winter spring summer``). The storage node's Fevap stays
+/// a multiplier on the climate rate.
 struct LidNodeVegetation {
     bool enabled = false;
     double laimean = 0.0;          ///< mean leaf-area index (scaled by lai_pattern)
