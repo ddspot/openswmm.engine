@@ -2153,6 +2153,11 @@ int writeInpFile(const SimulationContext&  ctx_internal,
                                  v.evap_while_ponding, v.infilmodel);
                     std::fprintf(f, "%-16s %-12s %.17g %.17g %.17g\n", name, "EVAPFACTORS", v.ks[0], v.ks[1], v.ks[2]);
                 }
+                if (uj < ctx.lid_controls.node_irrigation.size() && ctx.lid_controls.node_irrigation[uj].enabled) {
+                    const auto& ir = ctx.lid_controls.node_irrigation[uj];
+                    std::fprintf(f, "%-16s %-12s %.17g %.17g %s %s %d\n", name, "IRRIGATION", ir.depletion_fact,
+                                 ir.irrigation_coeff, ir.pattern.c_str(), ir.source.c_str(), ir.trigger_hour);
+                }
                 continue;
             }
             // Type line

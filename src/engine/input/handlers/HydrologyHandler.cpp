@@ -135,6 +135,7 @@ static void ensure_lid_capacity(LidControlStore& lc, int idx) {
     const auto n = static_cast<std::size_t>(idx + 1);
     if (lc.node_layers.size() < n) lc.node_layers.resize(n);
     if (lc.node_vegetation.size() < n) lc.node_vegetation.resize(n);
+    if (lc.node_irrigation.size() < n) lc.node_irrigation.resize(n);
     if (lc.lid_type.size() < n)  lc.lid_type.resize(n, std::string{});
     if (lc.surface.size() < n)   lc.surface.resize(n, {0,0,0,0,0});
     if (lc.soil.size() < n)     lc.soil.resize(n, {0,0,0,0,0,0,0});
@@ -601,6 +602,26 @@ void handle_lid_controls(SimulationContext& ctx, const std::vector<std::string>&
                     ctx.errors.push_back("Invalid NODE LID VEGETAT row: " + line); veg.enabled = false; continue;
                 }
                 veg.enabled = true;
+                continue;
+            }
+            if (layer == "IRRIGATION") {
+                // NAME IRRIGATION DepletionFact IrrigationCoeff Pattern SourceNode [TriggerHour]
+                if (tok.size() != 6 && tok.size() != 7) {
+                    ctx.errors.push_back("NODE LID IRRIGATION row needs 4 or 5 values: " + line); continue;
+                }
+                auto& irr = ctx.lid_controls.node_irrigation[static_cast<std::size_t>(idx)];
+                bool ok = true;
+                auto num = [&](std::size_t i) { char* e = nullptr; double v = std::strtod(tok[i].c_str(), &e);
+                                                ok = ok && e != tok[i].c_str() && *e == '\0' && std::isfinite(v); return v; };
+                irr.depletion_fact = num(2); irr.irrigation_coeff = num(3);
+                irr.pattern = tok[4]; irr.source = tok[5];
+                irr.trigger_hour = tok.size() == 7 ? static_cast<int>(num(6)) : 0;
+                if (!ok || irr.depletion_fact < 0.0 || irr.depletion_fact > 1.0 || irr.irrigation_coeff <= 0.0 ||
+                    irr.irrigation_coeff > 1.0 || irr.trigger_hour < 0 || irr.trigger_hour > 23) {
+                    ctx.errors.push_back("Invalid NODE LID IRRIGATION row (0<=d<=1, 0<c<=1, 0<=hour<=23): " + line);
+                    irr.enabled = false; continue;
+                }
+                irr.enabled = true;
                 continue;
             }
             if (layer == "EVAPFACTORS") {
