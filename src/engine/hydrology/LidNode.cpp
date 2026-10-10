@@ -3,6 +3,7 @@
 #include "LidNode.hpp"
 #include "../core/SimulationContext.hpp"
 #include "../core/UnitConversion.hpp"
+#include "../core/DateTime.hpp"
 #include "../input/Tokenizer.hpp"
 #include <algorithm>
 #include <cmath>
@@ -18,6 +19,37 @@ bool number(const std::string& s, double& v) {
 }
 double rainDepth(const SimulationContext& ctx) {
     return ucf::Ucf[ucf::RAINDEPTH][ucf::getUnitSystem(static_cast<int>(ctx.options.flow_units))];
+}
+
+// ---- UrbanEVA vegetation law on a storage-node LID -------------------------
+const LidNodeVegetation* vegetation(const SimulationContext& ctx, int control) {
+    if (control < 0) return nullptr;
+    const auto& vs = ctx.lid_controls.node_vegetation;
+    const auto u = static_cast<std::size_t>(control);
+    return u < vs.size() && vs[u].enabled ? &vs[u] : nullptr;
+}
+
+double monthlyPatternFactor(const SimulationContext& ctx, int idx, int month0) {
+    if (idx < 0 || idx >= ctx.patterns.count()) return 1.0;
+    const auto& f = ctx.patterns.factors[static_cast<std::size_t>(idx)];
+    if (ctx.patterns.types[static_cast<std::size_t>(idx)] != 0 || f.empty()) return 1.0;
+    return f[static_cast<std::size_t>(month0 % static_cast<int>(f.size()))];
+}
+
+// UrbanEVA's seasonal Ks: anchored at day 79 / 172 / 263 / 355 (winter,
+// spring, summer, winter) and interpolated linearly.
+double seasonalKs(const std::array<double, 3>& ks, int doy) {
+    static const int days[4] = {79, 172, 263, 355};
+    const double v[4] = {ks[0], ks[1], ks[2], ks[0]};
+    if (doy <= days[0] || doy >= days[3]) {
+        const double d0 = days[3] - 365.0, d1 = days[0];
+        const double x = doy <= days[0] ? doy : doy - 365.0;
+        return v[3] + (v[0] - v[3]) * (x - d0) / (d1 - d0);
+    }
+    for (int k = 0; k < 3; ++k)
+        if (doy >= days[k] && doy <= days[k + 1])
+            return v[k] + (v[k + 1] - v[k]) * (doy - days[k]) / double(days[k + 1] - days[k]);
+    return ks[0];
 }
 int outletNode(const SimulationContext& ctx, int link) {
     if (link < 0 || link >= ctx.n_links()) return -1;
@@ -354,6 +386,20 @@ void initialize(SimulationContext& ctx) {
         auto& state = st.lid_state[r];
         state.cells = std::move(cells);
         state.port_delta.assign(state.cells.size(), 0.0);
+        state.canopy_volume = 0.0; state.canopy_evap_total = 0.0; state.transp_total = 0.0;
+        {
+            auto& vs = ctx.lid_controls.node_vegetation;
+            const auto uc = static_cast<std::size_t>(st.lid[r].control);
+            if (uc < vs.size() && vs[uc].enabled) {
+                auto& veg = vs[uc];
+                veg.lai_pattern_idx = ctx.patterns.find(veg.lai_pattern);
+                veg.kc_pattern_idx = ctx.patterns.find(veg.kc_pattern);
+                if (veg.lai_pattern_idx < 0 || ctx.patterns.types[static_cast<std::size_t>(veg.lai_pattern_idx)] != 0)
+                    ctx.errors.push_back("LID control " + ctx.lid_controls.names[uc] + ": VEGETAT LAI pattern " + veg.lai_pattern + " is not a MONTHLY pattern");
+                if (veg.kc_pattern_idx < 0 || ctx.patterns.types[static_cast<std::size_t>(veg.kc_pattern_idx)] != 0)
+                    ctx.errors.push_back("LID control " + ctx.lid_controls.names[uc] + ": VEGETAT crop-factor pattern " + veg.kc_pattern + " is not a MONTHLY pattern");
+            }
+        }
         if (stack.front().flow.enabled) {
             state.richards = true;
             state.richards_water.assign(state.cells.size(), 0);
@@ -418,18 +464,64 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
                 c.theta = c.field_capacity;
             }
 
-        // Lateral inflows enter the top of the column. Saturated capacity that
-        // cannot be retained stays in the hydraulic inflow and raises the HGL.
         auto& first = state.cells.front();
+        // UrbanEVA vegetation law (when the control carries a VEGETAT row):
+        // Ep = E_pot · Ks(season) · Kc · Kc_pattern[month]; canopy Smax = SL · LAI(month),
+        // SCF = 1 − 0.7^LAI; demand = Ep · [SCF (Et-1) + (1 − SCF) · sqrt(min(w/nFC, 1)) (Es-2)]
+        // with w the relative plant-available water of the MEDIA. Replaces Fevap.
+        const LidNodeVegetation* veg = vegetation(ctx, st.lid[r].control);
+        double ep_rate = evaporation * st.evap_frac[r];
+        double smax_vol = 0.0, scf = 0.0, soil_factor = 1.0;
+        if (veg != nullptr) {
+            const int month0 = datetime::monthOfYear(ctx.current_date) - 1;
+            const int doy = datetime::dayOfYear(ctx.current_date);
+            const double lai = veg->laimean * monthlyPatternFactor(ctx, veg->lai_pattern_idx, month0);
+            const double kc = veg->cropfactor * monthlyPatternFactor(ctx, veg->kc_pattern_idx, month0);
+            ep_rate = evaporation * seasonalKs(veg->ks, doy) * kc;
+            smax_vol = veg->sl / rainDepth(ctx) * lai * first.area;
+            scf = lai > 0.0 ? 1.0 - std::pow(0.7, lai) : 0.0;
+            double wvol = 0.0, vol = 0.0, fc = 0.0, wp = 0.0; bool have = false;
+            for (const auto& c : state.cells) if (c.kind == LidNodeLayerKind::Media && c.geometric_volume > 0.0) {
+                if (!have) { fc = c.field_capacity; wp = c.wilting_point; have = true; }
+                wvol += c.theta * c.geometric_volume; vol += c.geometric_volume;
+            }
+            double g = 1.0;
+            if (have && vol > 0.0 && fc > wp && veg->nfc > 0.0) {
+                const double w = (wvol / vol - wp) / (fc - wp);
+                g = std::sqrt(std::clamp(w / veg->nfc, 0.0, 1.0));
+            }
+            soil_factor = scf + (1.0 - scf) * g;
+        }
+        // Lateral inflows enter the top of the column — through the canopy
+        // first (Braden I-3: the store fills before any water passes). Saturated
+        // capacity that cannot be retained stays in the hydraulic inflow and
+        // raises the HGL.
+        const double inflow_vol = std::max(0.0, ctx.nodes.lat_flow[n]) * dt;
+        double intercepted = 0.0;
+        if (smax_vol > 0.0) {
+            intercepted = std::min(inflow_vol, std::max(0.0, smax_vol - state.canopy_volume));
+            state.canopy_volume += intercepted;
+        }
         const double capacity = std::max(0.0, (first.porosity - first.theta) * first.geometric_volume);
-        const double capture = std::min(std::max(0.0, ctx.nodes.lat_flow[n]) * dt, capacity);
+        const double capture = std::min(inflow_vol - intercepted, capacity);
         if (first.geometric_volume > 0.0) first.theta += capture / first.geometric_volume;
-        state.captured_flow = capture / dt;
+        state.captured_flow = (capture + intercepted) / dt;
         if (capture > 0) state.quality_transfers.push_back({-2, 0, capture});
         state.treated_volume += capture;
         ctx.nodes.lat_flow[n] -= state.captured_flow;
+        // Canopy evaporation (Ei-2): Ep · (S/Smax)^(2/3) · SCF, bounded by the store.
+        if (veg != nullptr && smax_vol > 0.0 && state.canopy_volume > 0.0) {
+            const double ei = std::min(state.canopy_volume,
+                ep_rate * dt * first.area * std::pow(state.canopy_volume / smax_vol, 2.0 / 3.0) * scf);
+            state.canopy_volume -= ei; state.evap_volume += ei; state.canopy_evap_total += ei;
+        } else if (smax_vol <= 0.0 && state.canopy_volume > 0.0) {
+            // leafless season: the store drains to the surface cell
+            if (first.geometric_volume > 0.0) first.theta += state.canopy_volume / first.geometric_volume;
+            state.canopy_volume = 0.0;
+        }
         // Evaporation draws from top to bottom, never below wilting point.
-        double evap = std::max(0.0, evaporation * st.evap_frac[r] * first.area * dt);
+        double evap = std::max(0.0, ep_rate * soil_factor * first.area * dt);
+        const double evap_before = state.evap_volume;
         for (auto& c : state.cells) {
             const double take = std::min(evap, std::max(0.0, (c.theta - c.wilting_point) * c.geometric_volume));
             if (c.geometric_volume > 0.0) c.theta -= take / c.geometric_volume;
@@ -514,14 +606,14 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
             }
             remaining -= step;
         }
-        state.held_volume = 0.0;
+        if (veg != nullptr) state.transp_total += state.evap_volume - evap_before;
+        state.held_volume = state.canopy_volume;
         for (const auto& c : state.cells) state.held_volume += c.theta * c.geometric_volume;
-        ctx.nodes.volume[n] += before + capture - state.evap_volume - state.held_volume;
+        ctx.nodes.volume[n] += before + capture + intercepted - state.evap_volume - state.held_volume;
         // Independent retained/mobile sums can leave an empty mobile store a
         // few ULPs below zero. Keep larger deficits visible to validation.
         const double roundoff = 16 * std::numeric_limits<double>::epsilon() *
-            std::max({1.0, std::abs(state.quality_old_mobile), before, capture,
-                      state.evap_volume, state.held_volume});
+            std::max({1.0, std::abs(state.quality_old_mobile), before, capture, intercepted, state.evap_volume, state.held_volume});
         if (ctx.nodes.volume[n] < 0.0 && ctx.nodes.volume[n] >= -roundoff)
             ctx.nodes.volume[n] = 0.0;
         // This is an internal redistribution before the routing step, so both
@@ -547,7 +639,7 @@ void finishStep(SimulationContext& ctx) {
             else if (cell.geometric_volume > 0.0) cell.theta += state.port_delta[i] / cell.geometric_volume;
         }
         if (state.richards) refreshRichardsState(ctx, r);
-        state.held_volume = 0.0;
+        state.held_volume = state.canopy_volume;
         if (state.richards) for (double water : state.richards_water) state.held_volume += water;
         else for (const auto& cell : state.cells) state.held_volume += cell.theta * cell.geometric_volume;
         const int us = ucf::getUnitSystem(static_cast<int>(ctx.options.flow_units));

@@ -134,6 +134,7 @@ static void ensure_aquifer_capacity(AquiferStore& aq, int idx) {
 static void ensure_lid_capacity(LidControlStore& lc, int idx) {
     const auto n = static_cast<std::size_t>(idx + 1);
     if (lc.node_layers.size() < n) lc.node_layers.resize(n);
+    if (lc.node_vegetation.size() < n) lc.node_vegetation.resize(n);
     if (lc.lid_type.size() < n)  lc.lid_type.resize(n, std::string{});
     if (lc.surface.size() < n)   lc.surface.resize(n, {0,0,0,0,0});
     if (lc.soil.size() < n)     lc.soil.resize(n, {0,0,0,0,0,0,0});
@@ -580,6 +581,40 @@ void handle_lid_controls(SimulationContext& ctx, const std::vector<std::string>&
         }
 
         if (ctx.lid_controls.lid_type[idx] == "NODE") {
+            if (layer == "VEGETAT") {
+                // SWMM-UrbanEVA grammar: laimean cropfactor SL nFC LAIpattern
+                // KCpattern soilevap intercep ievap soiltrans evapWhilePonding
+                // infil (+ k Vc for the SWMM-Canopy mode, accepted and ignored).
+                if (tok.size() != 14 && tok.size() != 16) {
+                    ctx.errors.push_back("NODE LID VEGETAT row needs 12 or 14 values: " + line); continue;
+                }
+                auto& veg = ctx.lid_controls.node_vegetation[static_cast<std::size_t>(idx)];
+                bool ok = true;
+                auto num = [&](std::size_t i) { char* e = nullptr; double v = std::strtod(tok[i].c_str(), &e);
+                                                ok = ok && e != tok[i].c_str() && *e == '\0' && std::isfinite(v); return v; };
+                veg.laimean = num(2); veg.cropfactor = num(3); veg.sl = num(4); veg.nfc = num(5);
+                veg.lai_pattern = tok[6]; veg.kc_pattern = tok[7];
+                veg.soilevapmodel = static_cast<int>(num(8)); veg.intercepmodel = static_cast<int>(num(9));
+                veg.ievapmodel = static_cast<int>(num(10)); veg.soiltransmodel = static_cast<int>(num(11));
+                veg.evap_while_ponding = static_cast<int>(num(12)); veg.infilmodel = static_cast<int>(num(13));
+                if (!ok || veg.laimean < 0.0 || veg.cropfactor < 0.0 || veg.sl < 0.0 || veg.nfc < 0.0 || veg.nfc > 1.0) {
+                    ctx.errors.push_back("Invalid NODE LID VEGETAT row: " + line); veg.enabled = false; continue;
+                }
+                veg.enabled = true;
+                continue;
+            }
+            if (layer == "EVAPFACTORS") {
+                // Seasonal Ks (winter spring summer) — UrbanEVA keeps these on
+                // the subcatchment; a node LID carries its own.
+                auto& veg = ctx.lid_controls.node_vegetation[static_cast<std::size_t>(idx)];
+                bool ok = tok.size() == 5;
+                for (std::size_t k = 0; ok && k < 3; ++k) {
+                    char* e = nullptr; veg.ks[k] = std::strtod(tok[k + 2].c_str(), &e);
+                    ok = e != tok[k + 2].c_str() && *e == '\0' && std::isfinite(veg.ks[k]) && veg.ks[k] >= 0.0;
+                }
+                if (!ok) ctx.errors.push_back("Invalid NODE LID EVAPFACTORS row (3 values >= 0): " + line);
+                continue;
+            }
             LidNodeLayer row;
             int count = 0;
             if (layer == "SURFACE") { row.kind = LidNodeLayerKind::Surface; count = 2; }

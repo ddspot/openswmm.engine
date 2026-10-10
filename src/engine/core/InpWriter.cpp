@@ -2145,6 +2145,14 @@ int writeInpFile(const SimulationContext&  ctx_internal,
                     for (int p = 0; p < counts[k]; ++p) std::fprintf(f, " %.17g", row.params[p]);
                     std::fprintf(f, "\n");
                 }
+                if (uj < ctx.lid_controls.node_vegetation.size() && ctx.lid_controls.node_vegetation[uj].enabled) {
+                    const auto& v = ctx.lid_controls.node_vegetation[uj];
+                    std::fprintf(f, "%-16s %-12s %.17g %.17g %.17g %.17g %s %s %d %d %d %d %d %d\n", name, "VEGETAT",
+                                 v.laimean, v.cropfactor, v.sl, v.nfc, v.lai_pattern.c_str(), v.kc_pattern.c_str(),
+                                 v.soilevapmodel, v.intercepmodel, v.ievapmodel, v.soiltransmodel,
+                                 v.evap_while_ponding, v.infilmodel);
+                    std::fprintf(f, "%-16s %-12s %.17g %.17g %.17g\n", name, "EVAPFACTORS", v.ks[0], v.ks[1], v.ks[2]);
+                }
                 continue;
             }
             // Type line
