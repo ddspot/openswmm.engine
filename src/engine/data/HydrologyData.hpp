@@ -117,6 +117,7 @@ struct AquiferStore {
  */
 struct LidControlStore {
     std::vector<std::vector<LidNodeLayer>> node_layers;
+    std::vector<LidNodeVegetation>         node_vegetation;  ///< per control, NODE only
     int count() const { return static_cast<int>(names.size()); }
 
     std::vector<std::string> names;

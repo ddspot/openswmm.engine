@@ -25,6 +25,30 @@ struct LidNodeLayer {
     richards::Material retention; // explicit inverse-metre parameters
     richards::Options flow; // control options, stored on first layer only
 };
+/// UrbanEVA vegetation on a storage-node LID (``NAME VEGETAT …`` row, the
+/// SWMM-UrbanEVA grammar): crop factor and leaf-area index with MONTHLY
+/// patterns, Braden interception (I-3) with wetted-fraction canopy
+/// evaporation (Ei-2), unstressed transpiration (Et-1) and square-root
+/// soil-moisture stress (Es-2) on the MEDIA water, seasonal Ks evapfactors
+/// (``NAME EVAPFACTORS winter spring summer``). Replaces the storage node's
+/// Fevap scaling of the climate rate when present.
+struct LidNodeVegetation {
+    bool enabled = false;
+    double laimean = 0.0;          ///< mean leaf-area index (scaled by lai_pattern)
+    double cropfactor = 1.0;       ///< Kc (scaled by kc_pattern)
+    double sl = 0.0;               ///< interception storage per unit LAI, authored mm
+    double nfc = 0.6;              ///< stress onset as a fraction of plant-available water
+    std::string lai_pattern;       ///< [PATTERNS] MONTHLY name
+    std::string kc_pattern;        ///< [PATTERNS] MONTHLY name
+    int lai_pattern_idx = -1;      ///< resolved at initialize()
+    int kc_pattern_idx = -1;
+    std::array<double, 3> ks{0.78, 0.82, 0.85};  ///< seasonal evapfactors (winter, spring, summer)
+    // UrbanEVA model selectors, kept for round trip; this build implements
+    // I-3 / Ei-2 / Et-1 / Es-2 regardless of the authored codes.
+    int soilevapmodel = 2, intercepmodel = 3, ievapmodel = 2, soiltransmodel = 1;
+    int evap_while_ponding = 1, infilmodel = 1;
+};
+
 struct LidNodeCell {
     double bottom = 0.0, top = 0.0; // feet above invert
     double geometric_volume = 0.0, area = 0.0;
@@ -56,10 +80,13 @@ struct LidNodeState {
     double mobile_delta = 0.0; // accepted port balance in the current hydraulic iteration
     std::vector<double> port_delta; // accepted link exchange volumes, reset each hydraulic iteration
     std::vector<LidNodeCell> cells; // top to bottom; MEDIA subdivided dynamically
-    double held_volume = 0.0;
-    double evap_volume = 0.0;
+    double held_volume = 0.0;      ///< cells + canopy
+    double evap_volume = 0.0;      ///< soil/media + canopy evaporation this step
     double captured_flow = 0.0;
     double treated_volume = 0.0;
+    double canopy_volume = 0.0;    ///< ft3, intercepted water on the vegetation
+    double canopy_evap_total = 0.0;///< ft3, cumulative canopy (interception) evaporation
+    double transp_total = 0.0;     ///< ft3, cumulative media evaporation under the vegetation law
 };
 struct LidNodeConfig {
     int control = -1;
