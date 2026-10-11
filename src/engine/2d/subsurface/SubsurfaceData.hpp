@@ -282,6 +282,10 @@ struct SubsurfaceState {
     double led_dunne    = 0.0;   ///< saturation excess to the surface
     double led_caprise  = 0.0;   ///< capillary rise (the negative recharge share)
     double led_et       = 0.0;   ///< subsurface ET out
+    /// UrbanEVA Stage 3a: the share of `led_et` drawn through node beds as
+    /// capillary ET into storage-node LIDs (diagnostic split, not a second
+    /// outflow — continuityResidual uses led_et alone).
+    double led_lid_caprise = 0.0;
     double led_infil_in = 0.0;   ///< q⁺ delivered from the surface
     double led_link     = 0.0;   ///< G-X3: conduit seepage delivered in
     /// Diagnostic split of `led_infil_in`: the share booked from 1D

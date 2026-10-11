@@ -1269,6 +1269,8 @@ void DefaultReportPlugin::write_results(std::FILE* f,
             row2("Deep Percolation .........", g.led_deep);
             row2("Node Exchange Outflow ....", g.led_node);
             row2("Subsurface ET ............", g.led_et);
+            if (g.led_lid_caprise != 0.0)
+                row2("  (LID Capillary ET, incl.)", g.led_lid_caprise);
             row2("Saturation Excess Return .", g.led_dunne);
             row2("Final Stored Volume ......", g.liveStorage());
             row2("  (Recharge, internal) ...", g.led_recharge);
@@ -2642,24 +2644,25 @@ void DefaultReportPlugin::write_results(std::FILE* f,
             const auto uc = static_cast<std::size_t>(std::max(ctrl, 0));
             const bool veg = ctrl >= 0 && uc < ctx.lid_controls.node_vegetation.size() && ctx.lid_controls.node_vegetation[uc].enabled;
             const bool irr = ctrl >= 0 && uc < ctx.lid_controls.node_irrigation.size() && ctx.lid_controls.node_irrigation[uc].enabled;
-            if (!veg && !irr) continue;
+            const bool cap = ctrl >= 0 && uc < ctx.lid_controls.node_capillary.size() && ctx.lid_controls.node_capillary[uc].enabled;
+            if (!veg && !irr && !cap) continue;
             if (!header) {
                 header = true;
                 WRITE(f, "");
                 WRITE(f, "***********************************");
                 WRITE(f, "LID Storage Node Vegetation Summary");
                 WRITE(f, "***********************************");
-                std::fprintf(f, "\n  --------------------------------------------------------------------------------------");
-                std::fprintf(f, "\n                            Canopy       Media   Irrigation   Irrigation");
-                std::fprintf(f, "\n                              Evap        Evap        Volume       Events");
-                std::fprintf(f, si_report ? "\n  Node                    10^6 ltr    10^6 ltr      10^6 ltr        count"
-                                          : "\n  Node                        Mgal        Mgal          Mgal        count");
-                std::fprintf(f, "\n  --------------------------------------------------------------------------------------");
+                std::fprintf(f, "\n  -----------------------------------------------------------------------------------------------------");
+                std::fprintf(f, "\n                            Canopy       Media   Irrigation   Irrigation    Capillary");
+                std::fprintf(f, "\n                              Evap        Evap        Volume       Events           ET");
+                std::fprintf(f, si_report ? "\n  Node                    10^6 ltr    10^6 ltr      10^6 ltr        count     10^6 ltr"
+                                          : "\n  Node                        Mgal        Mgal          Mgal        count         Mgal");
+                std::fprintf(f, "\n  -----------------------------------------------------------------------------------------------------");
             }
             const int n = ctx.node_subtypes.storages.node_idx[r];
-            std::fprintf(f, "\n  %-20s %11.3f %11.3f %13.3f %12d", ctx.node_names.name_of(n).c_str(),
+            std::fprintf(f, "\n  %-20s %11.3f %11.3f %13.3f %12d %12.3f", ctx.node_names.name_of(n).c_str(),
                          state.canopy_evap_total * Vcf, state.transp_total * Vcf,
-                         state.irrigation_total * Vcf, state.irrigation_events);
+                         state.irrigation_total * Vcf, state.irrigation_events, state.caprise_total * Vcf);
         }
         if (header) { WRITE(f, ""); WRITE(f, ""); }
     }

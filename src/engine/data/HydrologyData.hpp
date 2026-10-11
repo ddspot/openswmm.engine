@@ -119,6 +119,7 @@ struct LidControlStore {
     std::vector<std::vector<LidNodeLayer>> node_layers;
     std::vector<LidNodeVegetation>         node_vegetation;  ///< per control, NODE only
     std::vector<LidNodeIrrigation>         node_irrigation;  ///< per control, NODE only
+    std::vector<LidNodeCapillary>          node_capillary;   ///< per control, NODE only
     int count() const { return static_cast<int>(names.size()); }
 
     std::vector<std::string> names;

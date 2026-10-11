@@ -305,6 +305,9 @@ std::string SubsurfaceSolver::initialize(const MeshData& mesh,
     node_exchange_vol_.assign(static_cast<std::size_t>(std::max(0, n_nodes)),
                               0.0);
     node_drawn_gw_ = node_exchange_vol_;                // G-X1
+    bed_seep_floor_.assign(node_beds_.size(), 0.0);     // UrbanEVA Stage 2.5
+    cacc_.assign(node_beds_.size(), 0.0);               // UrbanEVA Stage 3a
+    cap_gathered_ = 0.0;
     drain_cap_binds_ = 0;                               // G-W1b
     node_refunds_    = 0;                               // G-W1b
     {
@@ -699,6 +702,16 @@ void SubsurfaceSolver::sampleNodeExchange(const NodeData* nodes, double dt) {
                   std::max(0.5 * state_.zs[ci], kTiny);
 
         double Q = cond * (h_gw - h_pipe);   // m³/s, + out of the aquifer
+        // UrbanEVA Stage 2.5: a node LID with a BOTTOM layer drains into an
+        // unsaturated zone at its bottom conductivity while the table is
+        // below its invert — the head-driven conductance alone made the
+        // coupled column drain 2–4× slower than the bare one and sit wetter
+        // (A3: node exchange 36 vs exfiltration 81 mm/yr). The floor is the
+        // LID's seepage capacity; the caps below (headroom, the node's own
+        // water) still bound it.
+        if (b < bed_seep_floor_.size() && bed_seep_floor_[b] > 0.0 &&
+            h_gw < nodes->invert_elev[ni] * l12)
+            Q = std::min(Q, -bed_seep_floor_[b]);
         if (Q > 0.0) {
             // Cap an aquifer→pipe drain at the cell's drainable water.
             //
@@ -909,13 +922,73 @@ double SubsurfaceSolver::gatherNode(int i) noexcept {
     // construction, because they ARE the volumes that produced this
     // firing's `node_out`.
     std::fill(bed_gathered_.begin(), bed_gathered_.end(), 0.0);
+    cap_gathered_ = 0.0;
     for (std::size_t b = 0; b < node_beds_.size(); ++b) {
         if (node_beds_[b].cell != i) continue;
         const double take = consumePending(state_.nacc[b]);
         if (b < bed_gathered_.size()) bed_gathered_[b] = take;
         v += take;
+        // UrbanEVA Stage 3a: capillary ET rides the same saturated-store
+        // withdrawal but carries no mass to the node (it evaporated), so it
+        // is excluded from the species weights above.
+        if (b < cacc_.size()) {
+            const double c = consumePending(cacc_[b]);
+            cap_gathered_ += c;
+            v += c;
+        }
     }
     return v;
+}
+
+// ---------------------------------------------------------------------------
+// UrbanEVA fork: storage-node LID ↔ aquifer (Stages 2.5 / 3a)
+// ---------------------------------------------------------------------------
+
+int SubsurfaceSolver::bedOfNode(int node) const noexcept {
+    for (std::size_t b = 0; b < node_beds_.size(); ++b)
+        if (node_beds_[b].node == node && node_beds_[b].cell >= 0) return static_cast<int>(b);
+    return -1;
+}
+
+void SubsurfaceSolver::setBedSeepageFloor(int node, double rate_1d) noexcept {
+    const int b = bedOfNode(node);
+    if (b < 0 || static_cast<std::size_t>(b) >= bed_seep_floor_.size()) return;
+    const double v12 = opts_ ? opts_->vol_1d_to_2d : 1.0;
+    bed_seep_floor_[static_cast<std::size_t>(b)] = std::max(0.0, rate_1d) * v12;
+}
+
+double SubsurfaceSolver::drawLidCapillary(int node, double demand_1d, double invert_1d,
+                                          double reach_1d) noexcept {
+    if (!state_.active || !(demand_1d > 0.0) || !(reach_1d > 0.0)) return 0.0;
+    const int bi = bedOfNode(node);
+    if (bi < 0) return 0.0;
+    const auto b  = static_cast<std::size_t>(bi);
+    const auto ci = static_cast<std::size_t>(node_beds_[b].cell);
+    const double l12 = opts_ ? opts_->len_1d_to_2d : 1.0;
+    const double v12 = opts_ ? opts_->vol_1d_to_2d : 1.0;
+    const double table = state_.z_bed[ci] + state_.hg[ci];
+    const double gap   = invert_1d * l12 - table;          // m, + table below the LID bottom
+    const double reach = reach_1d * l12;
+    if (gap >= reach) return 0.0;
+    const double factor = gap <= 0.0 ? 1.0 : 1.0 - gap / reach;
+    const double want = demand_1d * v12 * factor;
+    // Availability: the cell's drainable saturated water in the same
+    // per-step share the drain cap uses, less what is already pending out
+    // of it (this bed's capillary and exchange draws).
+    const double Sy = specificYield(
+        static_cast<int>(ci), paramsOf(static_cast<int>(ci)), state_.theta_s[ci],
+        std::max(state_.zs[ci] - state_.hg[ci], 0.0),
+        static_cast<GwClosure>(state_.closure[ci]), nullptr);
+    double avail = kFaceShare * state_.hg[ci] * Sy * state_.area[ci];
+    for (const auto ob : cell_beds_[ci]) {
+        avail -= std::max(0.0, state_.nacc[ob]);
+        if (ob < cacc_.size()) avail -= cacc_[ob];
+    }
+    const double grant = std::clamp(want, 0.0, std::max(0.0, avail));
+    if (grant <= 0.0) return 0.0;
+    cacc_[b] += grant;
+    accumulators_pending_ = true;
+    return grant / v12;
 }
 
 // ---------------------------------------------------------------------------
@@ -1502,7 +1575,17 @@ void SubsurfaceSolver::fireCell(int i, double dt, SurfaceStateData& surf, double
     if (cl!=GwClosure::ENSLAVED && q0 < 0.0) state_.led_caprise += -q0 * A * dt;
     state_.led_deep += state_.qdeep_last[u] * A * dt;
     state_.led_lateral += lat_vol;
-    state_.led_node    += state_.qnode_last[u] * dt;
+    {
+        // UrbanEVA Stage 3a: the capillary share of this firing's node
+        // withdrawal evaporated inside the LID — it is subsurface ET, not
+        // node exchange (the router never delivers it).
+        const double node_out = state_.qnode_last[u] * dt;
+        const double cap = std::clamp(cap_gathered_, 0.0, std::max(0.0, node_out));
+        state_.led_node        += node_out - cap;
+        state_.led_et          += cap;
+        state_.led_lid_caprise += cap;
+        cap_gathered_ = 0.0;
+    }
 
     // --- 3-4. the unsaturated zone sees the CLAMPED table ------------------
     const double L1 = std::max(zs - hg1, 0.0);
