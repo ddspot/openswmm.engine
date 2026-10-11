@@ -1270,7 +1270,7 @@ void DefaultReportPlugin::write_results(std::FILE* f,
             row2("Node Exchange Outflow ....", g.led_node);
             row2("Subsurface ET ............", g.led_et);
             if (g.led_lid_caprise != 0.0)
-                row2("  (LID Capillary ET, incl.)", g.led_lid_caprise);
+                row2("  (LID Capillary ET) .....", g.led_lid_caprise);   // included in Subsurface ET
             row2("Saturation Excess Return .", g.led_dunne);
             row2("Final Stored Volume ......", g.liveStorage());
             row2("  (Recharge, internal) ...", g.led_recharge);
