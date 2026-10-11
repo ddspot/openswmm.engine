@@ -2158,6 +2158,10 @@ int writeInpFile(const SimulationContext&  ctx_internal,
                     std::fprintf(f, "%-16s %-12s %.17g %.17g %s %s %d\n", name, "IRRIGATION", ir.depletion_fact,
                                  ir.irrigation_coeff, ir.pattern.c_str(), ir.source.c_str(), ir.trigger_hour);
                 }
+                if (uj < ctx.lid_controls.node_capillary.size() && ctx.lid_controls.node_capillary[uj].enabled) {
+                    const auto& cp = ctx.lid_controls.node_capillary[uj];
+                    std::fprintf(f, "%-16s %-12s %s %.17g\n", name, "CAPILLARY", "ET_DEPTH", cp.reach);
+                }
                 continue;
             }
             // Type line

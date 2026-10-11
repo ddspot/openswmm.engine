@@ -324,6 +324,29 @@ public:
     }
     /// Zero the per-node ledger at the start of a routing batch.
     void resetNodeExchangeVolumes() noexcept;
+
+    // ---- UrbanEVA fork: storage-node LID ↔ aquifer (Stages 2.5 / 3a) ------
+    //
+    /// Stage 2.5: gravity-drainage floor for a node LID with a BOTTOM layer.
+    /// `rate_1d` is the LID bottom's seepage capacity (K_bottom · area, 1D
+    /// flow units). While the water table lies BELOW the node invert the
+    /// node → aquifer exchange is at least this rate (the unsaturated zone
+    /// under the LID takes the percolate at the bottom conductivity, as the
+    /// bare column's Green-Ampt exfiltration does); the head-driven term
+    /// still applies once the table reaches the invert. Zero disables it.
+    void setBedSeepageFloor(int node, double rate_1d) noexcept;
+    /// Stage 3a: deficit-driven capillary ET. `demand_1d` is the LID's unmet
+    /// potential ET this step (1D volume), `invert_1d` the node invert
+    /// (1D length), `reach_1d` the ET_DEPTH reach below the invert. The draw
+    /// is `demand · max(0, 1 − gap / reach)` with `gap = invert − table`,
+    /// bounded by the bed cell's drainable saturated water, booked into the
+    /// capillary accumulator and gathered at the cell's firing as subsurface
+    /// ET (`led_et`, split out in `led_lid_caprise`). Returns the granted
+    /// volume in 1D units; 0 without a bed or when the table is out of reach.
+    double drawLidCapillary(int node, double demand_1d, double invert_1d,
+                            double reach_1d) noexcept;
+    /// The bed index a 1D node exchanges through, or −1.
+    int bedOfNode(int node) const noexcept;
     /// G-O: the `[2D_AQUIFER_NODE]` beds as resolved (cell index filled),
     /// in the authored order — parallel to SurfaceRouter2D::aquiferNodeNames().
     const std::vector<GwNodeBed>& nodeBeds() const noexcept { return node_beds_; }
@@ -463,6 +486,16 @@ private:
     /// `node_exchange_vol_` — the frozen node volume is a batch budget, not a
     /// per-substep one, exactly as the surface's `node_drawn_` ledger.
     std::vector<double>    node_drawn_gw_;
+    /// UrbanEVA Stage 2.5: per-bed seepage floor (m³/s), set by the LID node
+    /// each routing step; 0 = no floor.
+    std::vector<double>    bed_seep_floor_;
+    /// UrbanEVA Stage 3a: per-bed capillary-ET accumulator (m³, + out of the
+    /// aquifer), booked by `drawLidCapillary`, gathered with `nacc` at the
+    /// cell's firing — but never delivered to the node (it evaporated).
+    std::vector<double>    cacc_;
+    /// The capillary share of the CURRENT gather (set by gatherNode, read by
+    /// the firing's ledger split).
+    double                 cap_gathered_ = 0.0;
     /// T7.4: the router's published node species rows (not owned).
     const double* node_row_conc_ = nullptr;
     int           node_row_ns_   = 0;

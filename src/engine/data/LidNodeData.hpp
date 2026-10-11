@@ -66,6 +66,21 @@ struct LidNodeIrrigation {
     int trigger_hour = 0;          ///< local hour the daily check runs (0-23)
 };
 
+/// Capillary rise from a `[2D_AQUIFER]` cell into a storage-node LID
+/// (``NAME CAPILLARY ET_DEPTH Reach`` row). Stage 3a of the UrbanEVA port,
+/// the SWMM 5 ``gwater.c`` lower-zone-ET mechanism carried over: after the
+/// vegetation law has drawn what the MEDIA can give, the unmet potential ET
+/// is supplied from the saturated store of the cell under the node's bed
+/// when the water table lies within ``reach`` below the LID bottom,
+/// ``rise = D · max(0, 1 − gap / reach)``. Booked on the aquifer side as
+/// subsurface ET (the node's 1D books are untouched); the LID keeps the
+/// cumulative volume for the vegetation summary.
+struct LidNodeCapillary {
+    bool enabled = false;
+    int mode = 0;                  ///< 0 = ET_DEPTH (the only law in this build)
+    double reach = 0.0;            ///< authored rain-depth units (mm / in) below the LID bottom
+};
+
 struct LidNodeCell {
     double bottom = 0.0, top = 0.0; // feet above invert
     double geometric_volume = 0.0, area = 0.0;
@@ -107,6 +122,8 @@ struct LidNodeState {
     double irrigation_total = 0.0; ///< ft3, cumulative irrigation applied
     int irrigation_events = 0;     ///< number of doses
     long irrigation_last_day = -1; ///< whole-day index of the last daily check
+    double caprise_total = 0.0;    ///< ft3, cumulative capillary ET supplied by the aquifer (Stage 3a)
+    double caprise_step = 0.0;     ///< ft3, capillary ET this step (not in evap_volume: the aquifer books it)
 };
 struct LidNodeConfig {
     int control = -1;

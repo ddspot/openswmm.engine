@@ -5,6 +5,9 @@
 #include "../core/UnitConversion.hpp"
 #include "../core/DateTime.hpp"
 #include "../input/Tokenizer.hpp"
+#ifdef OPENSWMM_HAS_2D
+#include "../2d/SurfaceRouter2D.hpp"   // UrbanEVA Stages 2.5 / 3a: the node's aquifer bed
+#endif
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -29,6 +32,12 @@ const LidNodeIrrigation* irrigation(const SimulationContext& ctx, int control) {
     return u < vs.size() && vs[u].enabled ? &vs[u] : nullptr;
 }
 
+const LidNodeCapillary* capillary(const SimulationContext& ctx, int control) {
+    if (control < 0) return nullptr;
+    const auto& v = ctx.lid_controls.node_capillary;
+    const auto u = static_cast<std::size_t>(control);
+    return u < v.size() && v[u].enabled ? &v[u] : nullptr;
+}
 const LidNodeVegetation* vegetation(const SimulationContext& ctx, int control) {
     if (control < 0) return nullptr;
     const auto& vs = ctx.lid_controls.node_vegetation;
@@ -419,6 +428,7 @@ void initialize(SimulationContext& ctx) {
                     ctx.errors.push_back("LID control " + ctx.lid_controls.names[uc] + ": IRRIGATION source cannot be the LID node itself");
             }
             state.irrigation_total = 0.0; state.irrigation_events = 0; state.irrigation_last_day = -1;
+            state.caprise_total = 0.0; state.caprise_step = 0.0;
         }
         if (stack.front().flow.enabled) {
             state.richards = true;
@@ -470,8 +480,21 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
         state.quality_old_mobile = ctx.nodes.volume[n];
         state.quality_old_water.clear(); state.quality_transfers.clear();
         for (const auto& cell : state.cells) state.quality_old_water.push_back(cell.theta * cell.geometric_volume);
-        state.captured_flow = 0.0; state.evap_volume = 0.0;
+        state.captured_flow = 0.0; state.evap_volume = 0.0; state.caprise_step = 0.0;
         reconcileInfiltration(state, ctx.nodes.depth[n], false);
+#ifdef OPENSWMM_HAS_2D
+        // UrbanEVA Stage 2.5: over an aquifer bed the column's bottom seepage
+        // capacity (K_bottom · clogging · seasonal factor · bottom area) is the
+        // floor of the node → aquifer exchange while the table is below the
+        // invert — see SubsurfaceSolver::setBedSeepageFloor.
+        if (ctx.twod_io.surface_router != nullptr && ctx.twod_io.surface_router->subsurface().active() &&
+            n < static_cast<int>(ctx.nodes.aquifer2d_bed.size()) && ctx.nodes.aquifer2d_bed[static_cast<std::size_t>(n)]) {
+            const double kbot = bottomConductivity(ctx, r) / ucf::Ucf[ucf::RAINFALL][us] *
+                                bottomCloggingFactor(ctx, r) * ctx.climate_state.infil_factor;
+            ctx.twod_io.surface_router->subsurface().setBedSeepageFloor(
+                n, kbot > 0.0 ? kbot * state.cells.back().area : 0.0);
+        }
+#endif
         for (auto& c : state.cells)
             // A submerged cell retains field-capacity water on recession.
             // The before/after store difference below transfers this water
@@ -594,6 +617,23 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
             state.evap_volume += take; evap -= take;
             if (take > 0) state.quality_transfers.push_back({static_cast<int>(&c - state.cells.data()), -3, take});
         }
+#ifdef OPENSWMM_HAS_2D
+        // UrbanEVA Stage 3a (CAPILLARY ET_DEPTH): the potential the canopy and
+        // the media could not supply is drawn from the saturated store of the
+        // aquifer cell under the node's bed, scaled by how far the table sits
+        // below the LID bottom (SWMM 5 gwater.c lower-zone ET, carried over).
+        // The aquifer books it as subsurface ET; the 1D node sees no water.
+        if (const LidNodeCapillary* cap = capillary(ctx, st.lid[r].control);
+            cap != nullptr && ctx.twod_io.surface_router != nullptr) {
+            const double potential = ep_rate * first.area * dt;            // unstressed Ep · Kc · Ks · Fevap
+            const double deficit = std::max(0.0, potential - state.evap_volume);
+            if (deficit > 0.0) {
+                state.caprise_step = ctx.twod_io.surface_router->subsurface().drawLidCapillary(
+                    n, deficit, ctx.nodes.invert_elev[n], cap->reach / rainDepth(ctx));
+                state.caprise_total += state.caprise_step;
+            }
+        }
+#endif
         // Bounded forward-Euler method of lines. A shared transfer is removed
         // from its source and added to its receiver exactly once. Substeps keep
         // travel times resolved; each transfer is additionally capacity limited.

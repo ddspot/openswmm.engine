@@ -136,6 +136,7 @@ static void ensure_lid_capacity(LidControlStore& lc, int idx) {
     if (lc.node_layers.size() < n) lc.node_layers.resize(n);
     if (lc.node_vegetation.size() < n) lc.node_vegetation.resize(n);
     if (lc.node_irrigation.size() < n) lc.node_irrigation.resize(n);
+    if (lc.node_capillary.size() < n) lc.node_capillary.resize(n);
     if (lc.lid_type.size() < n)  lc.lid_type.resize(n, std::string{});
     if (lc.surface.size() < n)   lc.surface.resize(n, {0,0,0,0,0});
     if (lc.soil.size() < n)     lc.soil.resize(n, {0,0,0,0,0,0,0});
@@ -622,6 +623,26 @@ void handle_lid_controls(SimulationContext& ctx, const std::vector<std::string>&
                     irr.enabled = false; continue;
                 }
                 irr.enabled = true;
+                continue;
+            }
+            if (layer == "CAPILLARY") {
+                // NAME CAPILLARY ET_DEPTH Reach   (Stage 3a: deficit-driven capillary ET
+                // from the aquifer cell under the node's bed; Reach in mm / in)
+                auto& cap = ctx.lid_controls.node_capillary[static_cast<std::size_t>(idx)];
+                if (tok.size() != 4) {
+                    ctx.errors.push_back("NODE LID CAPILLARY row needs 2 values (ET_DEPTH Reach): " + line); continue;
+                }
+                std::string mode = tok[2];
+                for (auto& ch : mode) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+                char* e = nullptr; const double reach = std::strtod(tok[3].c_str(), &e);
+                const bool ok = e != tok[3].c_str() && *e == '\0' && std::isfinite(reach) && reach > 0.0;
+                if (mode == "DARCY") {
+                    ctx.errors.push_back("NODE LID CAPILLARY DARCY is not implemented in this build (use ET_DEPTH): " + line); continue;
+                }
+                if (mode != "ET_DEPTH" || !ok) {
+                    ctx.errors.push_back("Invalid NODE LID CAPILLARY row (ET_DEPTH Reach > 0): " + line); continue;
+                }
+                cap.mode = 0; cap.reach = reach; cap.enabled = true;
                 continue;
             }
             if (layer == "EVAPFACTORS") {
