@@ -508,13 +508,16 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
             }
 
         auto& first = state.cells.front();
-        // UrbanEVA vegetation law (when the control carries a VEGETAT row):
-        // Ep = E_pot · Ks(season) · Kc · Kc_pattern[month]; canopy Smax = SL · LAI(month),
-        // SCF = 1 − 0.7^LAI; demand = Ep · [SCF (Et-1) + (1 − SCF) · sqrt(min(w/nFC, 1)) (Es-2)]
-        // with w the relative plant-available water of the MEDIA; Fevap multiplies.
+        // UrbanEVA vegetation law (when the control carries a VEGETAT row), as
+        // lidproc.c getEvapRatesIntercep: Ep = E_pot · Ks(season) · Kc · Kc_pattern[month];
+        // canopy Smax = SL · LAI(month), SCF = 1 − 0.7^LAI, wetness f = (S/Smax)^(2/3);
+        // Ei = Ep · SCF · f (Ei-2); Es = (1 − SCF) · Ep · sqrt(min(w/nFC, 1)) (Es-2);
+        // Et = (SCF · Ep − Ei) · (1 − f) (Et-1) — the interception evaporation comes
+        // off the transpiration share, so Ei + Es + Et ≤ Ep. w is the relative
+        // plant-available water of the MEDIA; Fevap multiplies.
         const LidNodeVegetation* veg = vegetation(ctx, st.lid[r].control);
         double ep_rate = evaporation * st.evap_frac[r];
-        double smax_vol = 0.0, scf = 0.0, soil_factor = 1.0;
+        double smax_vol = 0.0, scf = 0.0, soil_g = 1.0;
         if (veg != nullptr) {
             const int month0 = datetime::monthOfYear(ctx.current_date) - 1;
             const int doy = datetime::dayOfYear(ctx.current_date);
@@ -534,7 +537,7 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
                 const double w = (wvol / vol - wp) / (fc - wp);
                 g = std::sqrt(std::clamp(w / veg->nfc, 0.0, 1.0));
             }
-            soil_factor = scf + (1.0 - scf) * g;
+            soil_g = g;
         }
         // UrbanEVA irrigation: one daily check at the trigger hour on the MEDIA
         // water; the dose comes out of the source storage node and goes in at
@@ -607,17 +610,23 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
         state.treated_volume += capture;
         ctx.nodes.lat_flow[n] -= state.captured_flow;
         // Canopy evaporation (Ei-2): Ep · (S/Smax)^(2/3) · SCF, bounded by the store.
+        double canopy_wet = 0.0, ei = 0.0;
         if (veg != nullptr && smax_vol > 0.0 && state.canopy_volume > 0.0) {
-            const double ei = std::min(state.canopy_volume,
-                ep_rate * dt * first.area * std::pow(state.canopy_volume / smax_vol, 2.0 / 3.0) * scf);
+            canopy_wet = std::pow(std::min(1.0, state.canopy_volume / smax_vol), 2.0 / 3.0);
+            ei = std::min(state.canopy_volume, ep_rate * dt * first.area * canopy_wet * scf);
             state.canopy_volume -= ei; state.evap_volume += ei; state.canopy_evap_total += ei;
         } else if (smax_vol <= 0.0 && state.canopy_volume > 0.0) {
             // leafless season: the store drains to the surface cell
             if (first.geometric_volume > 0.0) first.theta += state.canopy_volume / first.geometric_volume;
             state.canopy_volume = 0.0;
         }
+        // Soil demand: Es (stressed, bare share) + Et (transpiration share less the
+        // interception evaporation, reduced by the wet canopy fraction).
+        const double ep_vol = std::max(0.0, ep_rate * first.area * dt);
+        double evap = veg != nullptr
+            ? (1.0 - scf) * ep_vol * soil_g + std::max(0.0, scf * ep_vol - ei) * (1.0 - canopy_wet)
+            : ep_vol;
         // Evaporation draws from top to bottom, never below wilting point.
-        double evap = std::max(0.0, ep_rate * soil_factor * first.area * dt);
         const double evap_before = state.evap_volume;
         for (auto& c : state.cells) {
             const double take = std::min(evap, std::max(0.0, (c.theta - c.wilting_point) * c.geometric_volume));
