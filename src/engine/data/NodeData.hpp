@@ -880,6 +880,7 @@ struct NodeData {
         g(runoff_inflow, 0.0); g(gw_inflow, 0.0); g(ext_inflow, 0.0);
         g(dwf_inflow, 0.0); g(rdii_inflow, 0.0); g(iface_inflow, 0.0);
         g(coupling_inflow, 0.0); g(coupling_volume, 0.0); g(coupling_queue, 0.0);
+        g(aquifer_volume, 0.0); g(aquifer_inflow, 0.0);
         g(coupling_age_vol_queue, 0.0); g(coupling_temp_vol_queue, 0.0);
         g(coupling_age_vol_inflow, 0.0); g(coupling_temp_vol_inflow, 0.0);
         qual_vol_in.resize(un, 0.0);
@@ -1093,6 +1094,7 @@ struct NodeData {
         iface_inflow.shrink_to_fit();
         coupling_inflow.shrink_to_fit();
         coupling_volume.shrink_to_fit();
+        aquifer_volume.shrink_to_fit(); aquifer_inflow.shrink_to_fit();
         coupling_queue.shrink_to_fit();
         coupling_age_vol_queue.shrink_to_fit(); coupling_temp_vol_queue.shrink_to_fit();
         coupling_age_vol_inflow.shrink_to_fit(); coupling_temp_vol_inflow.shrink_to_fit();
@@ -1209,6 +1211,8 @@ struct NodeData {
         // the next step's assembly), so zero them explicitly on cold start.
         std::fill(coupling_inflow.begin(), coupling_inflow.end(), 0.0);
         std::fill(coupling_volume.begin(), coupling_volume.end(), 0.0);
+        std::fill(aquifer_volume.begin(), aquifer_volume.end(), 0.0);
+        std::fill(aquifer_inflow.begin(), aquifer_inflow.end(), 0.0);
         std::fill(coupling_queue.begin(), coupling_queue.end(), 0.0);
         std::fill(coupling_qual_queue.begin(), coupling_qual_queue.end(), 0.0);
         std::fill(coupling_qual_inflow.begin(), coupling_qual_inflow.end(), 0.0);
