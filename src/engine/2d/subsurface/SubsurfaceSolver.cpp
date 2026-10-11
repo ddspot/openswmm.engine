@@ -307,6 +307,7 @@ std::string SubsurfaceSolver::initialize(const MeshData& mesh,
                               0.0);
     node_drawn_gw_ = node_exchange_vol_;                // G-X1
     bed_seep_floor_.assign(node_beds_.size(), 0.0);     // UrbanEVA Stage 2.5
+    bed_media_.assign(node_beds_.size(), BedMedia{});   // UrbanEVA Stage 3b
     cacc_.assign(node_beds_.size(), 0.0);               // UrbanEVA Stage 3a
     cap_gathered_ = 0.0;
     drain_cap_binds_ = 0;                               // G-W1b
@@ -714,6 +715,35 @@ void SubsurfaceSolver::sampleNodeExchange(const NodeData* nodes, double dt) {
         if (b < bed_seep_floor_.size() && bed_seep_floor_[b] > 0.0 &&
             h_gw < nodes->invert_elev[ni] * l12)
             Q = std::min(Q, -bed_seep_floor_[b]);
+        // UrbanEVA Stage 3b (CAPILLARY DARCY): with the table below the
+        // invert, an unsaturated Darcy flux between the aquifer soil halfway
+        // down the gap (SIGMA layer state) and the LID's lowest MEDIA cell,
+        // upward when the media is the drier side: q = K̄·((ψ_m − ψ_a)/Δz − 1).
+        // Bounded by the media's free pore space; the drain cap below bounds
+        // it against the cell's drainable water like any other withdrawal.
+        if (b < bed_media_.size() && bed_media_[b].set &&
+            static_cast<GwClosure>(state_.closure[ci]) == GwClosure::SIGMA) {
+            const auto& md = bed_media_[b];
+            const double invert_m = nodes->invert_elev[ni] * l12;
+            const double gap = invert_m - h_gw;
+            const double L   = std::max(state_.zs[ci] - state_.hg[ci], 0.0);
+            if (gap > 0.0 && gap < md.reach && L > kTiny && state_.m_layers > 0) {
+                const double z_probe = invert_m - 0.5 * gap;                       // halfway down the gap
+                const double depth   = (state_.z_bed[ci] + state_.zs[ci]) - z_probe; // below the cell surface
+                const int j = std::clamp(static_cast<int>(std::floor(depth / (L / state_.m_layers))),
+                                         0, state_.m_layers - 1);
+                const auto p = paramsOf(bed.cell);
+                const double th_a = state_.theta_sigma[static_cast<std::size_t>(j) * static_cast<std::size_t>(state_.n_cells) + ci];
+                const double Se = std::clamp((th_a - state_.theta_r[ci]) /
+                                             std::max(state_.theta_s[ci] - state_.theta_r[ci], kTiny), 1.0e-6, 1.0);
+                const double psi_a = soil::suctionAtSaturation(p, Se);
+                const double K_a   = soil::conductivity(p, psi_a);
+                const double dz    = std::max(md.z_m - z_probe, kTiny);
+                const double Kbar  = (md.K_m > 0.0 && K_a > 0.0) ? 2.0 * md.K_m * K_a / (md.K_m + K_a) : 0.0;
+                double q_up = Kbar * bed.area * ((md.psi_m - psi_a) / dz - 1.0);
+                if (q_up > 0.0) Q += std::min(q_up, md.cap_rate);
+            }
+        }
         if (Q > 0.0) {
             // Cap an aquifer→pipe drain at the cell's drainable water.
             //
@@ -950,6 +980,23 @@ int SubsurfaceSolver::bedOfNode(int node) const noexcept {
     for (std::size_t b = 0; b < node_beds_.size(); ++b)
         if (node_beds_[b].node == node && node_beds_[b].cell >= 0) return static_cast<int>(b);
     return -1;
+}
+
+void SubsurfaceSolver::setBedMediaState(int node, double z_m_1d, double psi_m_1d, double K_m_1d,
+                                        double cap_rate_1d, double reach_1d) noexcept {
+    const int b = bedOfNode(node);
+    if (b < 0 || static_cast<std::size_t>(b) >= bed_media_.size()) return;
+    const double l12 = opts_ ? opts_->len_1d_to_2d : 1.0;
+    const double v12 = opts_ ? opts_->vol_1d_to_2d : 1.0;
+    auto& m = bed_media_[static_cast<std::size_t>(b)];
+    m.set = true;
+    m.z_m = z_m_1d * l12; m.psi_m = std::max(0.0, psi_m_1d) * l12; m.K_m = std::max(0.0, K_m_1d) * l12;
+    m.cap_rate = std::max(0.0, cap_rate_1d) * v12; m.reach = std::max(0.0, reach_1d) * l12;
+}
+
+void SubsurfaceSolver::clearBedMediaState(int node) noexcept {
+    const int b = bedOfNode(node);
+    if (b >= 0 && static_cast<std::size_t>(b) < bed_media_.size()) bed_media_[static_cast<std::size_t>(b)] = BedMedia{};
 }
 
 void SubsurfaceSolver::setBedSeepageFloor(int node, double rate_1d) noexcept {

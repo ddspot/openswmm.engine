@@ -626,23 +626,25 @@ void handle_lid_controls(SimulationContext& ctx, const std::vector<std::string>&
                 continue;
             }
             if (layer == "CAPILLARY") {
-                // NAME CAPILLARY ET_DEPTH Reach   (Stage 3a: deficit-driven capillary ET
-                // from the aquifer cell under the node's bed; Reach in mm / in)
+                // NAME CAPILLARY ET_DEPTH Reach        (Stage 3a: deficit-driven capillary ET)
+                // NAME CAPILLARY DARCY    Reach [b]    (Stage 3b: unsaturated Darcy flux into the media)
+                // Reach in mm / in below the LID bottom; b = Clapp–Hornberger exponent (default 4).
                 auto& cap = ctx.lid_controls.node_capillary[static_cast<std::size_t>(idx)];
-                if (tok.size() != 4) {
-                    ctx.errors.push_back("NODE LID CAPILLARY row needs 2 values (ET_DEPTH Reach): " + line); continue;
+                if (tok.size() != 4 && tok.size() != 5) {
+                    ctx.errors.push_back("NODE LID CAPILLARY row needs 'ET_DEPTH Reach' or 'DARCY Reach [b]': " + line); continue;
                 }
                 std::string mode = tok[2];
                 for (auto& ch : mode) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
-                char* e = nullptr; const double reach = std::strtod(tok[3].c_str(), &e);
-                const bool ok = e != tok[3].c_str() && *e == '\0' && std::isfinite(reach) && reach > 0.0;
-                if (mode == "DARCY") {
-                    ctx.errors.push_back("NODE LID CAPILLARY DARCY is not implemented in this build (use ET_DEPTH): " + line); continue;
+                bool ok = true;
+                auto num = [&](std::size_t i) { char* e = nullptr; double v = std::strtod(tok[i].c_str(), &e);
+                                                ok = ok && e != tok[i].c_str() && *e == '\0' && std::isfinite(v); return v; };
+                const double reach = num(3);
+                const double b = tok.size() == 5 ? num(4) : 4.0;
+                if (!ok || reach <= 0.0 || b <= 0.0 || (mode != "ET_DEPTH" && mode != "DARCY") ||
+                    (mode == "ET_DEPTH" && tok.size() == 5)) {
+                    ctx.errors.push_back("Invalid NODE LID CAPILLARY row (ET_DEPTH Reach > 0 | DARCY Reach > 0 [b > 0]): " + line); continue;
                 }
-                if (mode != "ET_DEPTH" || !ok) {
-                    ctx.errors.push_back("Invalid NODE LID CAPILLARY row (ET_DEPTH Reach > 0): " + line); continue;
-                }
-                cap.mode = 0; cap.reach = reach; cap.enabled = true;
+                cap.mode = mode == "DARCY" ? 1 : 0; cap.reach = reach; cap.ch_b = b; cap.enabled = true;
                 continue;
             }
             if (layer == "EVAPFACTORS") {

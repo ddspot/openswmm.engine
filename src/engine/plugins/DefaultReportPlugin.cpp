@@ -2654,7 +2654,7 @@ void DefaultReportPlugin::write_results(std::FILE* f,
                 WRITE(f, "***********************************");
                 std::fprintf(f, "\n  -----------------------------------------------------------------------------------------------------");
                 std::fprintf(f, "\n                            Canopy       Media   Irrigation   Irrigation    Capillary");
-                std::fprintf(f, "\n                              Evap        Evap        Volume       Events           ET");
+                std::fprintf(f, "\n                              Evap        Evap        Volume       Events         Rise");
                 std::fprintf(f, si_report ? "\n  Node                    10^6 ltr    10^6 ltr      10^6 ltr        count     10^6 ltr"
                                           : "\n  Node                        Mgal        Mgal          Mgal        count         Mgal");
                 std::fprintf(f, "\n  -----------------------------------------------------------------------------------------------------");
