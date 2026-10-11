@@ -1788,6 +1788,10 @@ void SurfaceRouter2D::coAdvanceStep(SimulationContext& ctx, double dt,
             if (nv[ni] == 0.0) continue;
             if (ni < ctx.nodes.coupling_volume.size())
                 ctx.nodes.coupling_volume[ni] += nv[ni] * options_.flow_2d_to_1d;
+            // UrbanEVA: the aquifer's share, so a storage-node LID can let it
+            // enter at its bottom instead of through the canopy / surface.
+            if (ni < ctx.nodes.aquifer_volume.size())
+                ctx.nodes.aquifer_volume[ni] += nv[ni] * options_.flow_2d_to_1d;
         }
         // T7.4: the tuple rides the same channel as the volume. Aquifer →
         // node mass goes into the node's coupling QUEUES, which

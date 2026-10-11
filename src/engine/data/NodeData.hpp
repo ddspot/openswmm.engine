@@ -314,6 +314,13 @@ struct NodeData {
      *          In-memory only (not serialized to hotstart). See plan / review §11.
      */
     std::vector<double>     coupling_volume;
+    /// UrbanEVA fork: the `[2D_AQUIFER]` bed share of `coupling_volume` /
+    /// `coupling_inflow` (same sign and units), booked by the router's flush
+    /// and re-derived as a rate by assembleLateralInflows. A storage-node LID
+    /// uses it to let aquifer water enter its mobile store at the bottom
+    /// instead of through the canopy and surface cell. In-memory only.
+    std::vector<double>     aquifer_volume;
+    std::vector<double>     aquifer_inflow;
     /// G-X2 (2026-09-19): 1 when the node has a two-zone aquifer bed under
     /// it (a `[2D_AQUIFER_NODE]` row or auto-enrolment). A storage node so
     /// flagged exchanges through the conductance channel and its own
@@ -787,6 +794,8 @@ struct NodeData {
         iface_inflow.assign(un, 0.0);
         coupling_inflow.assign(un, 0.0);
         coupling_volume.assign(un, 0.0);
+        aquifer_volume.assign(un, 0.0);
+        aquifer_inflow.assign(un, 0.0);
         coupling_queue.assign(un, 0.0);
         coupling_age_vol_queue.assign(un, 0.0);
         coupling_temp_vol_queue.assign(un, 0.0);
@@ -931,6 +940,7 @@ struct NodeData {
         r(head); r(volume); r(lat_flow); r(user_lat_flow);
         r(runoff_inflow); r(gw_inflow); r(ext_inflow); r(dwf_inflow);
         r(rdii_inflow); r(iface_inflow); r(coupling_inflow); r(coupling_volume);
+        r(aquifer_volume); r(aquifer_inflow);
         r(coupling_queue); r(inflow); r(outflow); r(overflow);
         r(coupling_age_vol_queue); r(coupling_temp_vol_queue);
         r(coupling_age_vol_inflow); r(coupling_temp_vol_inflow);
@@ -970,6 +980,7 @@ struct NodeData {
         e(runoff_inflow); e(gw_inflow); e(ext_inflow); e(dwf_inflow);
         e(rdii_inflow); e(iface_inflow);
         e(coupling_inflow); e(coupling_volume); e(coupling_queue);
+        e(aquifer_volume); e(aquifer_inflow);
         e(coupling_age_vol_queue); e(coupling_temp_vol_queue);
         e(coupling_age_vol_inflow); e(coupling_temp_vol_inflow);
         e(qual_vol_in); e(lid_drain_qual_vol); e(lid_drain_inflow);
