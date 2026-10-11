@@ -2146,7 +2146,10 @@ int writeInpFile(const SimulationContext&  ctx_internal,
                 }
                 if (uj < ctx.lid_controls.node_capillary.size() && ctx.lid_controls.node_capillary[uj].enabled) {
                     const auto& cp = ctx.lid_controls.node_capillary[uj];
-                    std::fprintf(f, "%-16s %-12s %s %.17g\n", name, "CAPILLARY", "ET_DEPTH", cp.reach);
+                    if (cp.mode == 1)
+                        std::fprintf(f, "%-16s %-12s %s %.17g %.17g\n", name, "CAPILLARY", "DARCY", cp.reach, cp.ch_b);
+                    else
+                        std::fprintf(f, "%-16s %-12s %s %.17g\n", name, "CAPILLARY", "ET_DEPTH", cp.reach);
                 }
                 continue;
             }

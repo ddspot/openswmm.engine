@@ -75,10 +75,21 @@ struct LidNodeIrrigation {
 /// ``rise = D · max(0, 1 − gap / reach)``. Booked on the aquifer side as
 /// subsurface ET (the node's 1D books are untouched); the LID keeps the
 /// cumulative volume for the vegetation summary.
+/// Two laws share the row. ``ET_DEPTH`` (mode 0, Stage 3a) is the one above.
+/// ``DARCY`` (mode 1, Stage 3b) is the process form: an unsaturated Darcy
+/// flux between the aquifer soil halfway down the gap and the lowest MEDIA
+/// cell, ``q = K̄ · ((ψ_m − ψ_a)/Δz − 1)`` upward when the media is the drier
+/// side, bounded by the media's free pore space and the cell's drainable
+/// water; the water enters the media (θ rises) through the ordinary node
+/// exchange channel and ET then follows from the vegetation law. The media's
+/// retention is Clapp–Hornberger on the authored suction head,
+/// ``ψ(θ) = ψ_b · (φ/θ)^b`` (``b`` optional, default 4), its conductivity the
+/// LID soil law ``K = Ks · exp(−HCO · (φ − θ))``.
 struct LidNodeCapillary {
     bool enabled = false;
-    int mode = 0;                  ///< 0 = ET_DEPTH (the only law in this build)
+    int mode = 0;                  ///< 0 = ET_DEPTH, 1 = DARCY
     double reach = 0.0;            ///< authored rain-depth units (mm / in) below the LID bottom
+    double ch_b = 4.0;             ///< DARCY: Clapp–Hornberger retention exponent of the media
 };
 
 struct LidNodeCell {
@@ -122,8 +133,8 @@ struct LidNodeState {
     double irrigation_total = 0.0; ///< ft3, cumulative irrigation applied
     int irrigation_events = 0;     ///< number of doses
     long irrigation_last_day = -1; ///< whole-day index of the last daily check
-    double caprise_total = 0.0;    ///< ft3, cumulative capillary ET supplied by the aquifer (Stage 3a)
-    double caprise_step = 0.0;     ///< ft3, capillary ET this step (not in evap_volume: the aquifer books it)
+    double caprise_total = 0.0;    ///< ft3, cumulative capillary rise from the aquifer (ET_DEPTH: as ET; DARCY: into the media)
+    double caprise_step = 0.0;     ///< ft3, ET_DEPTH capillary ET this step (not in evap_volume: the aquifer books it)
 };
 struct LidNodeConfig {
     int control = -1;

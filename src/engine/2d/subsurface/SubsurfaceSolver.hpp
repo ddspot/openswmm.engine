@@ -331,6 +331,19 @@ public:
                             double reach_1d) noexcept;
     /// The bed index a 1D node exchanges through, or −1.
     int bedOfNode(int node) const noexcept;
+    /// Stage 3b (CAPILLARY DARCY): the LID's lowest MEDIA cell as the node
+    /// LID sees it this step, all in 1D units — centre elevation, suction
+    /// head (positive), unsaturated conductivity (length/s), the free pore
+    /// space it can still take (volume/s) and the reach below the invert
+    /// within which the connection is evaluated. `sampleNodeExchange` adds
+    /// an upward unsaturated Darcy flux from the aquifer soil halfway down
+    /// the gap (SIGMA layer state) while the table is below the invert; it
+    /// rides the ordinary node-exchange channel (nacc / node_exchange_vol_),
+    /// so the router delivers it and the aquifer books it as node exchange.
+    void setBedMediaState(int node, double z_m_1d, double psi_m_1d, double K_m_1d,
+                          double cap_rate_1d, double reach_1d) noexcept;
+    /// Drop the media state (no DARCY row, or the LID is Richards).
+    void clearBedMediaState(int node) noexcept;
     /// G-O: the `[2D_AQUIFER_NODE]` beds as resolved (cell index filled),
     /// in the authored order — parallel to SurfaceRouter2D::aquiferNodeNames().
     const std::vector<GwNodeBed>& nodeBeds() const noexcept { return node_beds_; }
@@ -462,6 +475,9 @@ private:
     /// UrbanEVA Stage 2.5: per-bed seepage floor (m³/s), set by the LID node
     /// each routing step; 0 = no floor.
     std::vector<double>    bed_seep_floor_;
+    /// UrbanEVA Stage 3b: per-bed media state for the DARCY law (SI).
+    struct BedMedia { bool set = false; double z_m = 0, psi_m = 0, K_m = 0, cap_rate = 0, reach = 0; };
+    std::vector<BedMedia>  bed_media_;
     /// UrbanEVA Stage 3a: per-bed capillary-ET accumulator (m³, + out of the
     /// aquifer), booked by `drawLidCapillary`, gathered with `nacc` at the
     /// cell's firing — but never delivered to the node (it evaporated).

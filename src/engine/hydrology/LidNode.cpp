@@ -494,6 +494,31 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
             ctx.twod_io.surface_router->subsurface().setBedSeepageFloor(
                 n, kbot > 0.0 ? kbot * state.cells.back().area : 0.0);
         }
+        // UrbanEVA Stage 3b (CAPILLARY DARCY): publish the lowest MEDIA cell's
+        // state for the unsaturated exchange — Clapp–Hornberger suction on the
+        // authored suction head, ψ = ψ_b·(φ/θ)^b, and the LID soil law's
+        // conductivity K = Ks·exp(−HCO·(φ − θ)); the free pore space bounds it.
+        const LidNodeCapillary* capd = capillary(ctx, st.lid[r].control);
+        const bool darcy = capd != nullptr && capd->mode == 1 && ctx.twod_io.surface_router != nullptr &&
+            ctx.twod_io.surface_router->subsurface().active() &&
+            n < static_cast<int>(ctx.nodes.aquifer2d_bed.size()) && ctx.nodes.aquifer2d_bed[static_cast<std::size_t>(n)];
+        if (darcy) {
+            const LidNodeCell* low = nullptr;
+            for (const auto& c : state.cells) if (c.kind == LidNodeLayerKind::Media && c.geometric_volume > 0.0) low = &c;
+            auto& sub = ctx.twod_io.surface_router->subsurface();
+            if (low != nullptr && low->porosity > 0.0) {
+                const double th = std::clamp(low->theta, 1.0e-4, low->porosity);
+                const double psi_m = low->suction * std::pow(low->porosity / th, capd->ch_b);
+                const double k_m = low->conductivity * std::exp(-low->conductivity_slope * std::max(0.0, low->porosity - th));
+                sub.setBedMediaState(n, ctx.nodes.invert_elev[n] + 0.5 * (low->top + low->bottom), psi_m, k_m,
+                                     std::max(0.0, (low->porosity - low->theta) * low->geometric_volume) / dt,
+                                     capd->reach / rainDepth(ctx));
+            } else {
+                sub.clearBedMediaState(n);
+            }
+        }
+#else
+        const bool darcy = false;
 #endif
         for (auto& c : state.cells)
             // A submerged cell retains field-capacity water on recession.
@@ -605,9 +630,29 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
         const double capacity = std::max(0.0, (first.porosity - first.theta) * first.geometric_volume);
         const double capture = std::min(inflow_vol - intercepted, capacity);
         if (first.geometric_volume > 0.0) first.theta += capture / first.geometric_volume;
-        state.captured_flow = (capture + intercepted) / dt;
+        // Stage 3b: water arriving through the aquifer bed wets the column from
+        // the bottom up (the unsaturated Darcy rise and, with the table above the
+        // invert, the saturated exchange); what the pores cannot take stays mobile.
+        double bottom_fill = 0.0;
+#ifdef OPENSWMM_HAS_2D
+        if (darcy && n < static_cast<int>(ctx.nodes.aquifer_inflow.size())) {
+            double left = std::max(0.0, ctx.nodes.aquifer_inflow[static_cast<std::size_t>(n)]) * dt;
+            for (auto it = state.cells.rbegin(); it != state.cells.rend() && left > 0.0; ++it) {
+                auto& c = *it;
+                if (c.top <= ctx.nodes.depth[n] || c.kind == LidNodeLayerKind::Surface) continue;
+                const double room = std::max(0.0, (c.porosity - c.theta) * c.geometric_volume);
+                const double put = std::min(room, left);
+                if (put > 0.0 && c.geometric_volume > 0.0) {
+                    c.theta += put / c.geometric_volume; left -= put; bottom_fill += put;
+                    state.quality_transfers.push_back({-2, static_cast<int>(&c - state.cells.data()), put});
+                }
+            }
+            state.caprise_total += bottom_fill;
+        }
+#endif
+        state.captured_flow = (capture + intercepted + bottom_fill) / dt;
         if (capture > 0) state.quality_transfers.push_back({-2, 0, capture});
-        state.treated_volume += capture;
+        state.treated_volume += capture + bottom_fill;
         ctx.nodes.lat_flow[n] -= state.captured_flow;
         // Canopy evaporation (Ei-2): Ep · (S/Smax)^(2/3) · SCF, bounded by the store.
         double canopy_wet = 0.0, ei = 0.0;
@@ -641,7 +686,7 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
         // below the LID bottom (SWMM 5 gwater.c lower-zone ET, carried over).
         // The aquifer books it as subsurface ET; the 1D node sees no water.
         if (const LidNodeCapillary* cap = capillary(ctx, st.lid[r].control);
-            cap != nullptr && ctx.twod_io.surface_router != nullptr) {
+            cap != nullptr && cap->mode == 0 && ctx.twod_io.surface_router != nullptr) {
             const double potential = ep_rate * first.area * dt;            // unstressed Ep · Kc · Ks · Fevap
             const double deficit = std::max(0.0, potential - state.evap_volume);
             if (deficit > 0.0) {
@@ -732,7 +777,7 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
         if (veg != nullptr) state.transp_total += state.evap_volume - evap_before;
         state.held_volume = state.canopy_volume;
         for (const auto& c : state.cells) state.held_volume += c.theta * c.geometric_volume;
-        ctx.nodes.volume[n] += before + capture + intercepted + irrigated - state.evap_volume - state.held_volume;
+        ctx.nodes.volume[n] += before + capture + intercepted + bottom_fill + irrigated - state.evap_volume - state.held_volume;
         // This is an internal redistribution before the routing step, so both
         // storage capacity and the initial hydraulic head must be refreshed.
         ctx.nodes.full_volume[n] = 0.0;
