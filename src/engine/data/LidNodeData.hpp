@@ -78,14 +78,14 @@ struct LidNodeIrrigation {
 /// Two laws share the row. ``ET_DEPTH`` (mode 0, Stage 3a) is the one above.
 /// ``DARCY`` (mode 1, Stage 3b) is the process form: an unsaturated Darcy
 /// flux between the aquifer soil halfway down the gap and the lowest MEDIA
-/// cell, ``q = K̄ · ((ψ_m − ψ_a)/Δz − 1)`` upward when the media is the drier
-/// side, bounded by the media's free pore space and the cell's drainable
-/// water; the water enters the media (θ rises) through the ordinary node
-/// exchange channel and ET then follows from the vegetation law. The media's
-/// retention is Clapp–Hornberger on the authored suction head,
-/// ``ψ(θ) = ψ_b · (φ/θ)^b`` (``b`` optional, default 4), its conductivity the
-/// Clapp–Hornberger conductivity ``K = Ks · (θ/φ)^(2b+3)`` (the LID drainage
-/// law ``exp(−HCO·(φ−θ))`` keeps far too much K in the dry range).
+/// cell, ``q = K_a · ((ψ_m − ψ_a)/Δz − 1)`` upward when the media is the drier
+/// side, carried by the donor-side (subsoil) conductivity at the probe layer,
+/// bounded by the media's free pore space and the cell's drainable water; the
+/// water enters the media (θ rises) through the ordinary node exchange
+/// channel and ET then follows from the vegetation law. The media's retention
+/// is Clapp–Hornberger on the authored suction head, ``ψ(θ) = ψ_b · (φ/θ)^b``
+/// (``b`` optional, default 4); its own conductivity ``K = Ks · (θ/φ)^(2b+3)``
+/// is published for diagnostics but does not throttle the rise.
 struct LidNodeCapillary {
     bool enabled = false;
     int mode = 0;                  ///< 0 = ET_DEPTH, 1 = DARCY
