@@ -739,11 +739,15 @@ void SubsurfaceSolver::sampleNodeExchange(const NodeData* nodes, double dt) {
                 const double psi_a = soil::suctionAtSaturation(p, Se);
                 const double K_a   = soil::conductivity(p, psi_a);
                 const double dz    = std::max(md.z_m - z_probe, kTiny);
-                const double Kbar  = (md.K_m > 0.0 && K_a > 0.0) ? 2.0 * md.K_m * K_a / (md.K_m + K_a) : 0.0;
-                double q_up = Kbar * bed.area * ((md.psi_m - psi_a) / dz - 1.0);
-                static const bool dbg = std::getenv("OPENSWMM_DARCY_DEBUG") != nullptr;
-                if (dbg) std::fprintf(stderr, "[darcy] gap %.3f L %.3f j %d th_a %.3f Se %.3f psi_a %.3f psi_m %.3f K_m %.3e K_a %.3e dz %.3f q_up %.3e cap %.3e Qsat %.3e\n",
-                                      gap, L, j, th_a, Se, psi_a, md.psi_m, md.K_m, K_a, dz, q_up, md.cap_rate, Q);
+                // Donor-side (upwind) conductivity: the rise is carried by the
+                // subsoil between the table and the root zone, whose K at the
+                // probe layer is what limits it (Gardner's steady upward flux).
+                // The harmonic mean with the root zone's own K was tried first
+                // and throttled the flux to ~0.1 mm/day at field capacity —
+                // the resistance of the root zone's bottom centimetres is not
+                // what limits capillary rise into it. `md.K_m` stays published
+                // for the kernel's reading of the media state.
+                const double q_up = K_a * bed.area * ((md.psi_m - psi_a) / dz - 1.0);
                 if (q_up > 0.0) Q += std::min(q_up, md.cap_rate);
             }
         }
