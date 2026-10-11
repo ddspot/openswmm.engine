@@ -585,7 +585,15 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
         // first (Braden I-3: the store fills before any water passes). Saturated
         // capacity that cannot be retained stays in the hydraulic inflow and
         // raises the HGL.
-        const double inflow_vol = std::max(0.0, ctx.nodes.lat_flow[n]) * dt;
+        double top_inflow = std::max(0.0, ctx.nodes.lat_flow[n]);
+#ifdef OPENSWMM_HAS_2D
+        // Water arriving through the aquifer bed is groundwater: it joins the
+        // mobile store at the column bottom, not the canopy and surface cell
+        // (through which it evaporated as canopy ET on the coupled A3 deck).
+        if (n < static_cast<int>(ctx.nodes.aquifer_inflow.size()))
+            top_inflow = std::max(0.0, top_inflow - std::max(0.0, ctx.nodes.aquifer_inflow[static_cast<std::size_t>(n)]));
+#endif
+        const double inflow_vol = top_inflow * dt;
         double intercepted = 0.0;
         if (smax_vol > 0.0) {
             intercepted = std::min(inflow_vol, std::max(0.0, smax_vol - state.canopy_volume));

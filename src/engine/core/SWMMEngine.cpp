@@ -9949,6 +9949,12 @@ void SWMMEngine::assembleLateralInflows(double dt_routing) noexcept {
                 ctx_.nodes.coupling_volume[uj] = 0.0;
             }
             ctx_.nodes.coupling_inflow[uj] = q_couple;
+            // UrbanEVA: the aquifer-bed share of that rate (same consumption
+            // rule as coupling_volume; the queued path stays surface-attributed).
+            if (uj < ctx_.nodes.aquifer_volume.size()) {
+                ctx_.nodes.aquifer_inflow[uj] = dt_routing > 0.0 ? ctx_.nodes.aquifer_volume[uj] / dt_routing : 0.0;
+                ctx_.nodes.aquifer_volume[uj] = 0.0;
+            }
 
             // S3: the 2D→1D species mass queue drains by the SAME rule as the
             // volume queue above (uniform rate over the remaining span, flushed
