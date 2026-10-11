@@ -495,9 +495,12 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
                 n, kbot > 0.0 ? kbot * state.cells.back().area : 0.0);
         }
         // UrbanEVA Stage 3b (CAPILLARY DARCY): publish the lowest MEDIA cell's
-        // state for the unsaturated exchange — Clapp–Hornberger suction on the
-        // authored suction head, ψ = ψ_b·(φ/θ)^b, and the LID soil law's
-        // conductivity K = Ks·exp(−HCO·(φ − θ)); the free pore space bounds it.
+        // state for the unsaturated exchange — Clapp–Hornberger on the authored
+        // suction head for BOTH retention and conductivity, ψ = ψ_b·(φ/θ)^b and
+        // K = Ks·(θ/φ)^(2b+3). (The LID soil law's K = Ks·exp(−HCO·(φ − θ)) is a
+        // drainage law: at θ/φ = 0.3 it keeps 4 % of Ks where a real soil keeps
+        // ~1e-6, and the upward flux came out at 60 mm/day on a dry sand.) The
+        // free pore space of the cell bounds the delivery.
         const LidNodeCapillary* capd = capillary(ctx, st.lid[r].control);
         const bool darcy = capd != nullptr && capd->mode == 1 && ctx.twod_io.surface_router != nullptr &&
             ctx.twod_io.surface_router->subsurface().active() &&
@@ -509,7 +512,7 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
             if (low != nullptr && low->porosity > 0.0) {
                 const double th = std::clamp(low->theta, 1.0e-4, low->porosity);
                 const double psi_m = low->suction * std::pow(low->porosity / th, capd->ch_b);
-                const double k_m = low->conductivity * std::exp(-low->conductivity_slope * std::max(0.0, low->porosity - th));
+                const double k_m = low->conductivity * std::pow(th / low->porosity, 2.0 * capd->ch_b + 3.0);
                 sub.setBedMediaState(n, ctx.nodes.invert_elev[n] + 0.5 * (low->top + low->bottom), psi_m, k_m,
                                      std::max(0.0, (low->porosity - low->theta) * low->geometric_volume) / dt,
                                      capd->reach / rainDepth(ctx));

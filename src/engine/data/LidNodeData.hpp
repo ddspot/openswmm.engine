@@ -84,7 +84,8 @@ struct LidNodeIrrigation {
 /// exchange channel and ET then follows from the vegetation law. The media's
 /// retention is Clapp–Hornberger on the authored suction head,
 /// ``ψ(θ) = ψ_b · (φ/θ)^b`` (``b`` optional, default 4), its conductivity the
-/// LID soil law ``K = Ks · exp(−HCO · (φ − θ))``.
+/// Clapp–Hornberger conductivity ``K = Ks · (θ/φ)^(2b+3)`` (the LID drainage
+/// law ``exp(−HCO·(φ−θ))`` keeps far too much K in the dry range).
 struct LidNodeCapillary {
     bool enabled = false;
     int mode = 0;                  ///< 0 = ET_DEPTH, 1 = DARCY
