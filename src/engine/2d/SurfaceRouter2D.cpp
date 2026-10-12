@@ -509,6 +509,32 @@ void SurfaceRouter2D::initialize(SimulationContext& ctx) {
     // Build coupling point descriptors
     coupling_points_ = buildCouplingPoints(mesh_, ctx);
 
+    // buildCouplingPoints skips a vertex coupling whose vertex belongs to no
+    // triangle (e.g. a manhole point inside a building hole of the mesh). The
+    // node then stays an ordinary 1D junction: not pond-capable, its overflow
+    // booked as Flooding Loss and never delivered to the surface. Say so.
+    {
+        std::vector<std::uint8_t> in_tri(static_cast<std::size_t>(mesh_.n_vertices()), 0);
+        for (int t = 0; t < mesh_.n_triangles(); ++t) {
+            in_tri[static_cast<std::size_t>(mesh_.tri_v0[t])] = 1;
+            in_tri[static_cast<std::size_t>(mesh_.tri_v1[t])] = 1;
+            in_tri[static_cast<std::size_t>(mesh_.tri_v2[t])] = 1;
+        }
+        int n_orphan = 0; std::string first;
+        for (int v = 0; v < mesh_.n_vertices(); ++v) {
+            if (mesh_.vert_coupled_node[v] < 0 || in_tri[static_cast<std::size_t>(v)]) continue;
+            if (n_orphan++ == 0)
+                first = ctx.node_names.name_of(mesh_.vert_coupled_node[v]);
+        }
+        if (n_orphan > 0)
+            ctx.warnings.push_back(
+                "WARNING: " + std::to_string(n_orphan) + " [2D_VERTEX_NODE_MAP] "
+                "coupling(s) were dropped because their vertex belongs to no "
+                "triangle (first: node '" + first + "'). These nodes are NOT "
+                "coupled: their overflow is lost as 1D Flooding. Couple them "
+                "through [2D_TRIANGLE_NODE_MAP] or to a mesh vertex.");
+    }
+
     // Live in-marcher exchange points: the marcher evaluates the orifice law
     // per 2D substep against live surface heads, so every non-outfall coupling
     // point becomes a SINGLE-CELL point (the lowest-bed incident cell, where

@@ -451,6 +451,15 @@ std::string parse2DVertexNodeMapLine(const std::vector<std::string>& tokens,
     if (vidx < 0 || vidx >= mesh.n_vertices())
         return "Vertex index out of range: " + tokens[0];
 
+    // One node per vertex (vert_coupled_node is a per-vertex slot): a second,
+    // different node used to overwrite the first silently, leaving it uncoupled
+    // (its overflow then left the 1D as Flooding Loss instead of reaching 2D).
+    if (!mesh.vert_coupled_node_name[vidx].empty() &&
+        mesh.vert_coupled_node_name[vidx] != tokens[1])
+        return "Vertex " + tokens[0] + " is already coupled to node '"
+               + mesh.vert_coupled_node_name[vidx] + "'; a vertex couples to one "
+               "node — couple '" + tokens[1] + "' through [2D_TRIANGLE_NODE_MAP]";
+
     mesh.vert_coupled_node_name[vidx] = tokens[1];
 
     // Optional discharge coefficient
