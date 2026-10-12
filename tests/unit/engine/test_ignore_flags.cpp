@@ -159,7 +159,7 @@ std::string groundwater_sections() {
         "AQ1  0.5  0.15  0.30  5.0  10  15  0.35  14  0.0  0.0  8.0  0.30\n"
         "\n[GROUNDWATER]\n"
         ";;Subcatch Aquifer Node Esurf A1 B1 A2 B2 A3 Dsw Egwt Ebot Wgr Umc\n"
-        "S1  AQ1  J1  10.0  0.1  1.5  0  0  0  0  *  0  0  *\n";
+        "S1  AQ1  J1  10.0  0.1  1.5  0  0  0  0  2.0  *  *  *\n";
 }
 
 // Snowpack whose surfaces hold snow (very small melt coefficients), plus a

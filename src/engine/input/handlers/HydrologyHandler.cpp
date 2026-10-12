@@ -87,6 +87,7 @@
 #include "../../core/SimulationContext.hpp"
 #include "../../data/SubcatchData.hpp"
 #include "../../data/HydrologyData.hpp"
+#include "../../core/Constants.hpp"
 
 #include "../InputParseUtils.hpp"
 
@@ -152,6 +153,9 @@ static void ensure_subcatch_gw_capacity(SimulationContext& ctx, int idx) {
     grow(ctx.subcatches.gw_a3,        0.0);
     grow(ctx.subcatches.gw_tw,        0.0);
     grow(ctx.subcatches.gw_hstar,     0.0);
+    grow(ctx.subcatches.gw_bottom_elev,      constants::MISSING);
+    grow(ctx.subcatches.gw_water_table_elev, constants::MISSING);
+    grow(ctx.subcatches.gw_upper_moist,      constants::MISSING);
 }
 
 // ============================================================================
@@ -383,7 +387,10 @@ void handle_groundwater(SimulationContext& ctx, const std::vector<std::string>& 
     for (const auto& line : lines) {
         auto tok = Tokenizer::tokenize(line);
         if (tok.size() < 11) continue;
-        // Subcatch  Aquifer  Node  SurfEl  A1  B1  A2  B2  A3  Twgr  Hstar
+        // Subcatch Aquifer Node Esurf A1 B1 A2 B2 A3 Dsw [Egwt Ebot Egw Umc]
+        // Egwt/Ebot/Egw/Umc are optional; '*' or absent = MISSING (legacy
+        // gwater_readGroundwaterParams: Egwt -> node invert, the other three
+        // -> the aquifer's value).
 
         const int idx = ctx.subcatch_names.find(tok[0]);
         if (idx < 0) continue;
@@ -402,7 +409,14 @@ void handle_groundwater(SimulationContext& ctx, const std::vector<std::string>& 
         ctx.subcatches.gw_b2[idx]        = to_double(tok[7]);
         ctx.subcatches.gw_a3[idx]        = to_double(tok[8]);
         ctx.subcatches.gw_tw[idx]        = to_double(tok[9]);
-        ctx.subcatches.gw_hstar[idx]     = to_double(tok[10]);
+        auto opt = [&tok](std::size_t k) {
+            return (tok.size() > k && tok[k] != "*")
+                   ? to_double(tok[k], constants::MISSING) : constants::MISSING;
+        };
+        ctx.subcatches.gw_hstar[idx]            = opt(10);  // Egwt (elevation)
+        ctx.subcatches.gw_bottom_elev[idx]      = opt(11);  // Ebot
+        ctx.subcatches.gw_water_table_elev[idx] = opt(12);  // Egw
+        ctx.subcatches.gw_upper_moist[idx]      = opt(13);  // Umc
     }
 }
 

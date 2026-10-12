@@ -55,6 +55,7 @@ void GWSoA::resize(int n) {
     lower_evap_depth.assign(un, 0.0);
     lower_loss_coeff.assign(un, 0.0);
     total_depth.assign(un, 0.0);
+    bottom_elev.assign(un, 0.0);
 
     a1.assign(un, 0.0); b1.assign(un, 0.0);
     a2.assign(un, 0.0); b2.assign(un, 0.0);
