@@ -1426,7 +1426,7 @@ int writeInpFile(const SimulationContext& ctx_internal,
         const int a=ctx.subcatches.gw_aquifer[us];
         if(a>=0 && a<ctx.aquifers.count() && ctx.subcatches.gw_node[us]>=0){anyGw=true;break;}}
     if(anyGw){sec(f,"GROUNDWATER");
-    std::fprintf(f,";;%-16s %-16s %-16s %-10s %-10s %-10s %-10s %-10s %-10s %-10s %-10s\n","Subcatchment","Aquifer","Node","SurfElev","A1","B1","A2","B2","A3","Tw","Hstar");
+    std::fprintf(f,";;%-16s %-16s %-16s %-10s %-10s %-10s %-10s %-10s %-10s %-10s %-10s\n","Subcatchment","Aquifer","Node","SurfElev","A1","B1","A2","B2","A3","Dsw","Egwt Ebot Egw Umc");
     std::fprintf(f,";;%-16s %-16s %-16s %-10s %-10s %-10s %-10s %-10s %-10s %-10s %-10s\n","----------------","----------------","----------------","----------","----------","----------","----------","----------","----------","----------","----------");
     for(size_t u=0;u<nGw;++u){const int s=static_cast<int>(u);
     const int aq=ctx.subcatches.gw_aquifer[u];
@@ -1437,13 +1437,21 @@ int writeInpFile(const SimulationContext& ctx_internal,
                                 "\": receiving node unresolved; row omitted");
         continue;
     }
-    std::fprintf(f,"%-16s %-16s %-16s %-10.10g %-10.10g %-10.10g %-10.10g %-10.10g %-10.10g %-10.10g %-10.10g\n",
+    // Optional Egwt/Ebot/Egw/Umc: MISSING -> '*' (legacy grammar).
+    auto optv=[](const std::vector<double>& v,size_t k){
+        char b[32];
+        if(k>=v.size()||v[k]==constants::MISSING) return std::string("*");
+        std::snprintf(b,sizeof b,"%.10g",v[k]); return std::string(b);};
+    std::fprintf(f,"%-16s %-16s %-16s %-10.10g %-10.10g %-10.10g %-10.10g %-10.10g %-10.10g %-10.10g %-10s %-10s %-10s %-10s\n",
         ctx.subcatch_names.name_of(s).c_str(),
         ctx.aquifers.names[static_cast<size_t>(aq)].c_str(),
         nN(ctx,ctx.subcatches.gw_node[u]),
         ctx.subcatches.gw_surf_elev[u],ctx.subcatches.gw_a1[u],ctx.subcatches.gw_b1[u],
         ctx.subcatches.gw_a2[u],ctx.subcatches.gw_b2[u],ctx.subcatches.gw_a3[u],
-        ctx.subcatches.gw_tw[u],ctx.subcatches.gw_hstar[u]);
+        ctx.subcatches.gw_tw[u],optv(ctx.subcatches.gw_hstar,u).c_str(),
+        optv(ctx.subcatches.gw_bottom_elev,u).c_str(),
+        optv(ctx.subcatches.gw_water_table_elev,u).c_str(),
+        optv(ctx.subcatches.gw_upper_moist,u).c_str());
     }}}
 
     // [GWF]

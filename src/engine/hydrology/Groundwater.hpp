@@ -100,12 +100,13 @@ struct GWSoA {
     std::vector<double> lower_evap_depth;
     std::vector<double> lower_loss_coeff;   ///< Deep percolation coeff
     std::vector<double> total_depth;        ///< Aquifer thickness (ft)
+    std::vector<double> bottom_elev;        ///< Aquifer bottom elevation (ft; per-subcatch Ebot override applied)
 
     // Lateral flow coefficients
     std::vector<double> a1, b1;       ///< GW outflow
     std::vector<double> a2, b2;       ///< Surface water interaction
     std::vector<double> a3;           ///< Cross-interaction
-    std::vector<double> h_star;       ///< Threshold water table height (ft)
+    std::vector<double> h_star;       ///< Threshold water table height above aquifer bottom (ft)
 
     // State variables (updated each timestep)
     std::vector<double> theta;        ///< Upper zone moisture content (0-φ)

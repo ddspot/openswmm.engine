@@ -4949,8 +4949,10 @@ void SWMMEngine::postOutputSnapshot(double /*dt_step*/) noexcept {
                     int aq = ctx_.subcatches.gw_aquifer[us];
                     if (aq >= 0) {
                         auto uaq = static_cast<std::size_t>(aq);
-                        double bot = ctx_.aquifers.bottom_elev[uaq];
-                        snap.subcatch.gw_elev[us] = bot + gw.lower_depth[us];
+                        (void)uaq;
+                        // E11 fix: both terms ft (scaled to display units later).
+                        snap.subcatch.gw_elev[us] =
+                            gw.bottom_elev[us] + gw.lower_depth[us];
                         snap.subcatch.soil_moist[us] = gw.theta[us];
                     }
                 }
@@ -7097,9 +7099,23 @@ void SWMMEngine::initHydrology() noexcept {
                                       / ucf::Ucf[ucf::LENGTH][unit_sys];
             gw.lower_loss_coeff[ui] = ctx_.aquifers.lower_loss[uaq]
                                       / ucf::Ucf[ucf::RAINFALL][unit_sys];
-            gw.total_depth[ui]      = (ctx_.subcatches.gw_surf_elev[ui]
-                                       - ctx_.aquifers.bottom_elev[uaq])
-                                      / ucf::Ucf[ucf::LENGTH][unit_sys];
+            // E11 fix: elevations are converted to ft once, and the per-
+            // subcatchment [GROUNDWATER] overrides (Ebot, Egw, Umc) replace the
+            // aquifer values when given (legacy gwater_readGroundwaterParams +
+            // gwater_validate + gwater_initState).
+            const double ucf_len = ucf::Ucf[ucf::LENGTH][unit_sys];
+            auto pick = [](double over, double base) {
+                return (over == constants::MISSING) ? base : over;
+            };
+            const double surf_ft = ctx_.subcatches.gw_surf_elev[ui] / ucf_len;
+            const double bot_ft  = pick(ctx_.subcatches.gw_bottom_elev[ui],
+                                        ctx_.aquifers.bottom_elev[uaq]) / ucf_len;
+            const double wte_ft  = pick(ctx_.subcatches.gw_water_table_elev[ui],
+                                        ctx_.aquifers.water_table_elev[uaq]) / ucf_len;
+            const double umc     = pick(ctx_.subcatches.gw_upper_moist[ui],
+                                        ctx_.aquifers.upper_moist[uaq]);
+            gw.bottom_elev[ui]      = bot_ft;
+            gw.total_depth[ui]      = surf_ft - bot_ft;
 
             // Copy GW lateral flow coefficients
             gw.a1[ui]     = ctx_.subcatches.gw_a1[ui];
@@ -7107,13 +7123,36 @@ void SWMMEngine::initHydrology() noexcept {
             gw.a2[ui]     = ctx_.subcatches.gw_a2[ui];
             gw.b2[ui]     = ctx_.subcatches.gw_b2[ui];
             gw.a3[ui]     = ctx_.subcatches.gw_a3[ui];
-            gw.h_star[ui] = ctx_.subcatches.gw_hstar[ui]
-                            / ucf::Ucf[ucf::LENGTH][unit_sys];
+            // Hstar = threshold height above the aquifer bottom: Egwt (an
+            // ELEVATION) - Ebot, or receiving-node invert - Ebot when Egwt is
+            // omitted (legacy gwater.c gwater_getGroundwater).
+            {
+                int gn = ctx_.subcatches.gw_node[ui];
+                if (gn < 0) gn = ctx_.subcatches.outlet_node[ui];
+                double thr_ft = 0.0;
+                if (ctx_.subcatches.gw_hstar[ui] != constants::MISSING)
+                    thr_ft = ctx_.subcatches.gw_hstar[ui] / ucf_len;
+                else if (gn >= 0 && gn < ctx_.n_nodes())
+                    thr_ft = ctx_.nodes.invert_elev[static_cast<std::size_t>(gn)];
+                gw.h_star[ui] = thr_ft - bot_ft;
+            }
 
-            // Initial conditions from aquifer
-            gw.theta[ui]      = ctx_.aquifers.upper_moist[uaq];
-            gw.lower_depth[ui] = ctx_.aquifers.water_table_elev[uaq]
-                                 / ucf::Ucf[ucf::LENGTH][unit_sys];
+            // Initial conditions (legacy gwater_initState)
+            gw.theta[ui] = umc;
+            if (gw.theta[ui] >= gw.porosity[ui])
+                gw.theta[ui] = gw.porosity[ui] - constants::XTOL;
+            gw.lower_depth[ui] = wte_ft - bot_ft;
+            if (gw.lower_depth[ui] >= gw.total_depth[ui])
+                gw.lower_depth[ui] = gw.total_depth[ui] - constants::XTOL;
+            // Initial upper-zone infiltration capacity (legacy maxInfilVol).
+            {
+                const double fp = std::max(1.0 - ctx_.subcatches.frac_imperv[ui], 0.0);
+                if (fp > 0.0) {
+                    gw.max_infil_vol[ui] = std::max(
+                        (surf_ft - wte_ft) * (gw.porosity[ui] - gw.theta[ui]) / fp, 0.0);
+                    ctx_.subcatches.gw_max_infil_vol[ui] = gw.max_infil_vol[ui];
+                }
+            }
         }
 
         // Parse [GWF] custom expressions (stored in ext_options during input parsing).
@@ -7597,10 +7636,13 @@ void SWMMEngine::assembleGWCoupling(double dt_runoff) noexcept {
         if (gw_node < 0) gw_node = ctx_.subcatches.outlet_node[ui];
         if (gw_node >= 0 && gw_node < ctx_.n_nodes()) {
             auto un = static_cast<std::size_t>(gw_node);
-            double bottom_elev = ctx_.aquifers.bottom_elev[static_cast<std::size_t>(aq_idx)];
+            // E11 fix: per-subcatch bottom (ft, Ebot override applied) — node
+            // invert/depth are ft internally, so all terms must be ft.
+            double bottom_elev = groundwater_.state().bottom_elev[ui];
             // Gap #41: fixedDepth option — use a fixed SW head instead of live node depth.
             // gw_tw stores the fixedDepth parameter (tok[9] in [GROUNDWATER] section).
-            double fixed_depth = ctx_.subcatches.gw_tw[ui];
+            int us_ = static_cast<int>(ucf::getUnitSystem(static_cast<int>(ctx_.options.flow_units)));
+            double fixed_depth = ctx_.subcatches.gw_tw[ui] / ucf::Ucf[ucf::LENGTH][us_];
             if (fixed_depth > 0.0) {
                 // Hsw = fixedDepth + nodeInvertElev - bottomElev  (matching legacy gwater.c)
                 ctx_.subcatches.gw_sw_head[ui] =

@@ -466,6 +466,13 @@ struct SubcatchData {
     /** @brief Water table elevation at which lateral GW flow ceases. */
     std::vector<double> gw_hstar;
 
+    /** @brief Per-subcatchment [GROUNDWATER] overrides (cols 12-14: Ebot,
+     *  Egw, Umc), raw project units; constants::MISSING = use the aquifer
+     *  value (legacy gwater_readGroundwaterParams / gwater_validate). */
+    std::vector<double> gw_bottom_elev;
+    std::vector<double> gw_water_table_elev;
+    std::vector<double> gw_upper_moist;
+
     // -----------------------------------------------------------------------
     // Snowpack assignment (index into SnowpackStore, -1 = none)
     // -----------------------------------------------------------------------
@@ -702,6 +709,9 @@ struct SubcatchData {
         gw_a3.assign(un, 0.0);
         gw_tw.assign(un, 0.0);
         gw_hstar.assign(un, 0.0);
+        gw_bottom_elev.assign(un, -1.0e10);
+        gw_water_table_elev.assign(un, -1.0e10);
+        gw_upper_moist.assign(un, -1.0e10);
         snowpack.assign(un, -1);
         snow_net_imperv.assign(un, -1.0);
         snow_net_perv.assign(un, -1.0);
@@ -760,6 +770,8 @@ struct SubcatchData {
         g(gw_aquifer, -1); g(gw_node, -1); g(gw_surf_elev, 0.0);
         g(gw_a1, 0.0); g(gw_b1, 0.0); g(gw_a2, 0.0); g(gw_b2, 0.0);
         g(gw_a3, 0.0); g(gw_tw, 0.0); g(gw_hstar, 0.0);
+        g(gw_bottom_elev, -1.0e10); g(gw_water_table_elev, -1.0e10);
+        g(gw_upper_moist, -1.0e10);
         g(snowpack, -1);
         g(snow_net_imperv, -1.0);
         g(snow_net_perv,   -1.0);
@@ -814,7 +826,8 @@ struct SubcatchData {
         r(stat_gw_sum_depth); r(stat_gw_final_theta); r(stat_gw_final_depth); r(gw_aquifer);
         r(gw_node); r(gw_surf_elev); r(gw_a1); r(gw_b1);
         r(gw_a2); r(gw_b2); r(gw_a3); r(gw_tw);
-        r(gw_hstar); r(snowpack); r(snow_net_imperv); r(snow_net_perv);
+        r(gw_hstar); r(gw_bottom_elev); r(gw_water_table_elev); r(gw_upper_moist);
+        r(snowpack); r(snow_net_imperv); r(snow_net_perv);
         r(snow_melt_imperv); r(snow_melt_perv);
         r(snow_melt_age_imperv); r(snow_melt_age_perv);
         r(total_lid_area_ft2); r(lid_return_to_perv_cfs); r(lid_drain_runon_cfs); r(outlet_name);
@@ -857,6 +870,7 @@ struct SubcatchData {
 
         e(gw_aquifer); e(gw_node); e(gw_surf_elev);
         e(gw_a1); e(gw_b1); e(gw_a2); e(gw_b2); e(gw_a3); e(gw_tw); e(gw_hstar);
+        e(gw_bottom_elev); e(gw_water_table_elev); e(gw_upper_moist);
         e(snowpack); e(snow_net_imperv); e(snow_net_perv);
         e(snow_melt_imperv); e(snow_melt_perv);
         e(snow_melt_age_imperv); e(snow_melt_age_perv);
@@ -992,6 +1006,9 @@ struct SubcatchData {
         gw_a3.shrink_to_fit();
         gw_tw.shrink_to_fit();
         gw_hstar.shrink_to_fit();
+        gw_bottom_elev.shrink_to_fit();
+        gw_water_table_elev.shrink_to_fit();
+        gw_upper_moist.shrink_to_fit();
         snowpack.shrink_to_fit();
         snow_net_imperv.shrink_to_fit();
         snow_net_perv.shrink_to_fit();
