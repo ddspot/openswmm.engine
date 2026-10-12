@@ -1020,20 +1020,35 @@ void DefaultReportPlugin::write_results(std::FILE* f,
             rowx("2D -> 1D Drain ...........", drain_1d);
             rowx("Net 1D -> 2D .............", spill_1d - drain_1d);
 
-            // Flow-routing continuity with the exchange internal: remove the
-            // drain from external inflow and the spill from flooding loss.
-            const double in_adj  = mb1.routing_dry_weather + mb1.routing_wet_weather
+            // Continuity of the COUPLED 1D+2D system, the exchange internal.
+            // Removing the drain from the 1D external inflow and the spill
+            // from its flooding loss is only half of it: the spilled water
+            // did not vanish, it went into 2D storage / boundary outflow (and
+            // the drained water came from there). The former line stopped at
+            // the 1D side, so it printed (spill − drain)/inflow — 76 % on a
+            // closed-box deck that conserves to round-off. Add the 2D domain's
+            // own external terms and storage (m³ → 1D ft³) so the line is a
+            // true system balance.
+            const double in_sys  = mb1.routing_dry_weather + mb1.routing_wet_weather
                                  + mb1.routing_gw_inflow + mb1.routing_rdii
                                  + (mb1.routing_external - drain_1d)
-                                 + mb1.routing_init_storage;
-            const double out_adj = (mb1.routing_flooding - spill_1d)
+                                 + mb1.routing_init_storage
+                                 + (mb2.init_storage + mb2.rainfall_in
+                                    + mb2.boundary_in) * m3_to_1d;
+            const double out_sys = (mb1.routing_flooding - spill_1d)
                                  + mb1.routing_outflow + mb1.routing_evap_loss
-                                 + mb1.routing_seep_loss + mb1.routing_final_storage;
-            const double err_adj = (in_adj > 0.0)
-                                 ? (in_adj - out_adj) / in_adj : 0.0;
+                                 + mb1.routing_seep_loss + mb1.routing_final_storage
+                                 + (mb2.boundary_out + mb2.evap_out
+                                    + mb2.infil_out + mb2.final_storage) * m3_to_1d
+                                 // outfall coupling: the outfall's net discharge
+                                 // onto the mesh is inside routing_outflow AND
+                                 // in 2D storage — an internal transfer too.
+                                 - (mb2.outfall_in - mb2.outfall_out) * m3_to_1d;
+            const double err_sys = (in_sys > 0.0)
+                                 ? (in_sys - out_sys) / in_sys : 0.0;
             std::fprintf(f,
-                "\n  Flow Continuity w/ Exchange Internal (%%) %8.3f",
-                err_adj * 100.0);
+                "\n  1D+2D System Continuity (%%) .%14.3f",
+                err_sys * 100.0);
         }
     }
 

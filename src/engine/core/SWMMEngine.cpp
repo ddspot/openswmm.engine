@@ -7934,6 +7934,16 @@ bool SWMMEngine::isInSteadyState(int action_count) const {
     if (!ctx_.options.skip_steady_state) return false;
     if (ctx_.current_time == 0.0) return false;
     if (action_count > 0) return false;
+#ifdef OPENSWMM_HAS_2D
+    // The steady-state test looks at the 1D network only, and a "steady" step
+    // returns from the routing step BEFORE surface_router_.advancePostRouting,
+    // so the 2D domain silently lost every skipped step: no rain, no overland
+    // flow, no exchange, while the 1D clock moved on (campus r2: applied mesh
+    // rain 3017 vs 5174 m³ between ROUTING_STEP 5 and 1 on the same window).
+    // A live 2D surface is never "steady" from the 1D's point of view — its
+    // exchange feeds lat_flow on the next step — so never skip while it runs.
+    if (surface_router_.isActive()) return false;
+#endif
 
     // Check flow error exceeds tolerance
     double flow_error = std::abs(ctx_.mass_balance.routing_error());

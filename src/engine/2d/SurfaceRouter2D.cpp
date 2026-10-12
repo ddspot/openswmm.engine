@@ -402,6 +402,47 @@ void SurfaceRouter2D::initialize(SimulationContext& ctx) {
     // BoundaryData / mesh edge slots (sizes boundary_, flips the drained flag).
     drainPendingRows();
 
+    // A [2D_BOUNDARY_CONDITIONS] row can only act on a PERIMETER edge (no
+    // neighbour): both marchers apply BCs on edges whose tri_nbr is -1 and
+    // ignore the rest. An interior slot carrying a non-WALL type was worse
+    // than ignored — the boundary ledger (bc_nonwall_slots_) booked the
+    // INTERIOR face flux the marcher publishes into that slot as boundary
+    // in/outflow, so the 2D continuity block reported phantom volumes (the
+    // −11 … −167 % "errors" of meshes whose writer numbered edges as
+    // (v_e, v_e+1) instead of the engine's "edge e is opposite vertex e").
+    // Reset such rows to WALL and say so.
+    {
+        int n_interior = 0;
+        int first_tri = -1, first_edge = -1;
+        const int nt = mesh_.n_triangles();
+        for (int i = 0; i < nt; ++i) {
+            for (int e = 0; e < 3; ++e) {
+                const int idx = i * 3 + e;
+                if (static_cast<BoundaryType>(boundary_.edge_bc_type[idx])
+                        == BoundaryType::WALL)
+                    continue;
+                const int nbr = (e == 0) ? mesh_.tri_nbr0[i]
+                              : (e == 1) ? mesh_.tri_nbr1[i]
+                                         : mesh_.tri_nbr2[i];
+                if (nbr < 0) continue;
+                boundary_.edge_bc_type[idx] =
+                    static_cast<int8_t>(BoundaryType::WALL);
+                boundary_.edge_bed_slope[idx] = 0.0;
+                if (n_interior++ == 0) { first_tri = i; first_edge = e; }
+            }
+        }
+        if (n_interior > 0) {
+            ctx.warnings.push_back(
+                "WARNING: " + std::to_string(n_interior)
+                + " [2D_BOUNDARY_CONDITIONS] row(s) name an INTERIOR edge "
+                  "(first: triangle " + std::to_string(first_tri)
+                + " edge " + std::to_string(first_edge)
+                + ") and were ignored. Edge e of a triangle is the edge "
+                  "OPPOSITE vertex e (edge 0 = v1-v2, 1 = v2-v0, 2 = v0-v1); "
+                  "the perimeter edges they were meant for stay WALL.");
+        }
+    }
+
     // Constant stage heads / flow discharges just re-drained from the
     // authored rows are in project display units — bring them into SI.
     // TS-driven entries (tseries slot == -2, name pending) are excluded:
@@ -1582,10 +1623,25 @@ void SurfaceRouter2D::resolveBoundaryValues(SimulationContext& ctx, double t) {
     if (bc_nonwall_dirty_) {
         bc_nonwall_dirty_ = false;
         bc_nonwall_slots_.clear();
-        for (int idx = 0; idx < ne; ++idx)
+        // Same slot rule as the marchers' bc_slot_ (ExplicitInertialSolver /
+        // ExplicitKokkosSurfaceSolver ::initialize): non-WALL AND perimeter.
+        // An interior slot holds the published interior face flux, which the
+        // boundary ledger must never book (types can also be set through the
+        // API after initialize(), so the guard lives here too).
+        const int nt = mesh_.n_triangles();
+        for (int idx = 0; idx < ne; ++idx) {
             if (static_cast<BoundaryType>(boundary_.edge_bc_type[idx])
-                    != BoundaryType::WALL)
-                bc_nonwall_slots_.push_back(idx);
+                    == BoundaryType::WALL)
+                continue;
+            const int i = idx / 3, e = idx % 3;
+            if (i < nt) {
+                const int nbr = (e == 0) ? mesh_.tri_nbr0[i]
+                              : (e == 1) ? mesh_.tri_nbr1[i]
+                                         : mesh_.tri_nbr2[i];
+                if (nbr >= 0) continue;
+            }
+            bc_nonwall_slots_.push_back(idx);
+        }
     }
 
     // One-shot: resolve deferred timeseries / curve names to table indices.
