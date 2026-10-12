@@ -3361,7 +3361,7 @@ void SWMMEngine::stepGroundwater(double dt_runoff) noexcept {
     for (int i = 0; i < ns; ++i) {
         auto ui = static_cast<std::size_t>(i);
         double gw_rate = groundwater_.state().gw_flow[ui]; // ft/sec
-        double area_ft2 = ctx_.subcatches.area[ui] * ucf::ACRES_TO_FT2;
+        double area_ft2 = ctx_.subcatches.area[ui] / ucf::UCF(ucf::LANDAREA, ctx_.options);
         ctx_.subcatches.gw_flow[ui] = gw_rate * area_ft2; // CFS
 
         // Gap #40: propagate max infiltration volume to SubcatchData for next
@@ -3378,7 +3378,7 @@ void SWMMEngine::stepGroundwater(double dt_runoff) noexcept {
     for (int i = 0; i < ns; ++i) {
         auto ui = static_cast<std::size_t>(i);
         if (ctx_.subcatches.gw_aquifer[ui] < 0) continue;
-        double area_ft2 = ctx_.subcatches.area[ui] * ucf::ACRES_TO_FT2;
+        double area_ft2 = ctx_.subcatches.area[ui] / ucf::UCF(ucf::LANDAREA, ctx_.options);
         ctx_.subcatches.stat_gw_infil_vol[ui]      += ctx_.subcatches.infil_loss[ui] * area_ft2 * dt_runoff;
         ctx_.subcatches.stat_gw_upper_evap_vol[ui] += gws.upper_evap[ui]  * area_ft2 * dt_runoff;
         ctx_.subcatches.stat_gw_lower_evap_vol[ui] += gws.lower_evap[ui]  * area_ft2 * dt_runoff;
@@ -5676,7 +5676,7 @@ int SWMMEngine::end() noexcept {
             if (gw.total_depth[ui] <= 0.0) continue;
             double upper_d = gw.total_depth[ui] - gw.lower_depth[ui];
             double vol = gw.theta[ui] * upper_d + gw.porosity[ui] * gw.lower_depth[ui];
-            double area = ctx_.subcatches.area[ui] * 43560.0;
+            double area = ctx_.subcatches.area[ui] / ucf::UCF(ucf::LANDAREA, ctx_.options);
             ctx_.mass_balance.gw_final_storage += vol * area;
         }
     }
@@ -7653,7 +7653,7 @@ void SWMMEngine::assembleGWCoupling(double dt_runoff) noexcept {
             }
 
             // Available node flow for GW negative flow limit
-            double area_ft2 = ctx_.subcatches.area[ui] * ucf::ACRES_TO_FT2;
+            double area_ft2 = ctx_.subcatches.area[ui] / ucf::UCF(ucf::LANDAREA, ctx_.options);
             if (area_ft2 > 0.0 && dt_runoff > 0.0) {
                 ctx_.subcatches.gw_node_avail_flow[ui] =
                     (ctx_.nodes.inflow[un] + ctx_.nodes.volume[un] / dt_runoff) / area_ft2;
@@ -8102,7 +8102,7 @@ void SWMMEngine::initMassBalance() noexcept {
             if (gw.total_depth[ui] <= 0.0) continue;
             double upper_d = gw.total_depth[ui] - gw.lower_depth[ui];
             double vol = gw.theta[ui] * upper_d + gw.porosity[ui] * gw.lower_depth[ui];
-            double area = ctx_.subcatches.area[ui] * ucf::ACRES_TO_FT2;
+            double area = ctx_.subcatches.area[ui] / ucf::UCF(ucf::LANDAREA, ctx_.options);
             ctx_.mass_balance.gw_init_storage += vol * area;
         }
     }

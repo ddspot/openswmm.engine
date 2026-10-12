@@ -166,7 +166,7 @@ static void getFluxes(GWContext& c, double theta, double lower_depth) {
         vars[GWV_PHI]   = c.porosity;
         vars[GWV_FI]    = c.infil * c.ucf_rainfall;
         vars[GWV_FU]    = c.upper_perc * c.ucf_rainfall;
-        vars[GWV_A]     = c.area * c.ucf_landarea;
+        vars[GWV_A]     = c.area;  // already project land-area units
         c.deep_loss = mathexpr::evaluate_fast(*c.deep_expr, vars) / c.ucf_rainfall;
     } else {
         c.deep_loss = (c.total_depth > 0.0)
@@ -215,7 +215,7 @@ static void getFluxes(GWContext& c, double theta, double lower_depth) {
         vars[GWV_PHI]   = c.porosity;
         vars[GWV_FI]    = c.infil * c.ucf_rainfall;
         vars[GWV_FU]    = c.upper_perc * c.ucf_rainfall;
-        vars[GWV_A]     = c.area * c.ucf_landarea;
+        vars[GWV_A]     = c.area;  // already project land-area units
         c.gw_flow += mathexpr::evaluate_fast(*c.lateral_expr, vars) / c.ucf_gwflow;
     }
     // Apply flow limits
@@ -333,7 +333,7 @@ void GWSolver::execute(SimulationContext& ctx, double dt, double max_evap,
         double node_flow = 0.0;
         if (gw_node >= 0 && gw_node < ctx.n_nodes()) {
             auto un = static_cast<std::size_t>(gw_node);
-            double area_ft2 = ctx.subcatches.area[ui] * ucf::ACRES_TO_FT2;
+            double area_ft2 = ctx.subcatches.area[ui] / ucf::UCF(ucf::LANDAREA, ctx.options);
             if (area_ft2 > 0.0)
                 node_flow = (ctx.nodes.inflow[un] + ctx.nodes.volume[un] / dt) / area_ft2;
         }
@@ -389,7 +389,7 @@ void GWSolver::execute(SimulationContext& ctx, double dt, double max_evap,
         auto ui = static_cast<std::size_t>(i);
         if (soa_.total_depth[ui] <= 0.0) continue;
 
-        double area = ctx.subcatches.area[ui] * ucf::ACRES_TO_FT2;
+        double area = ctx.subcatches.area[ui] / ucf::UCF(ucf::LANDAREA, ctx.options);
         double ft2sec = area * dt;
 
         mb.gw_infil        += infil_rate[i] * ft2sec;
