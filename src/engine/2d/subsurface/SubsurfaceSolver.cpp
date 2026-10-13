@@ -858,8 +858,8 @@ void SubsurfaceSolver::sampleNodeExchange(const NodeData* nodes, double dt) {
             const double booked = std::min(q_up, cap);
             if (booked < q_up) ++drain_cap_binds_;
             Q += booked;
-            darcy_requested_ += q_up * dt;
-            darcy_booked_    += booked * dt;
+            state_.led_darcy_req    += q_up * dt;
+            state_.led_darcy_booked += booked * dt;
         }
         if (Q == 0.0) continue;
 
