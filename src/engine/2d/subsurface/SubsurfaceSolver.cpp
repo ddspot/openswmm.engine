@@ -729,30 +729,31 @@ void SubsurfaceSolver::sampleNodeExchange(const NodeData* nodes, double dt) {
         // summed afterwards.
         double q_up = 0.0;
         static const int dbg_stride = [] { const char* e = std::getenv("OPENSWMM_DARCY_DEBUG"); return e ? std::max(1, std::atoi(e)) : 0; }();
-        if (b < bed_media_.size() && bed_media_[b].set &&
-            static_cast<GwClosure>(state_.closure[ci]) == GwClosure::SIGMA) {
+        if (b < bed_media_.size() && bed_media_[b].set) {
             const auto& md = bed_media_[b];
             const double invert_m = nodes->invert_elev[ni] * l12;
             const double gap = invert_m - h_gw;
             const double L   = std::max(state_.zs[ci] - state_.hg[ci], 0.0);
             double psi_a = 0.0, K_a = 0.0, dz = 0.0, th_a = 0.0; int j = -1; double q_raw = 0.0;
-            if (gap > 0.0 && gap < md.reach && L > kTiny && state_.m_layers > 0) {
-                const double z_probe = invert_m - 0.5 * gap;                       // halfway down the gap
-                const double depth   = (state_.z_bed[ci] + state_.zs[ci]) - z_probe; // below the cell surface
-                j = std::clamp(static_cast<int>(std::floor(depth / (L / state_.m_layers))),
-                               0, state_.m_layers - 1);
+            if (gap > 0.0 && gap < md.reach && L > kTiny) {
+                // The donor is the capillary fringe in hydrostatic equilibrium
+                // with the table: ψ_a = height of the probe above it (half the
+                // gap). The cell's own SIGMA layer state was tried first and is
+                // not representative here — a node LID's percolate enters the
+                // saturated store through the bed and bypasses the unsaturated
+                // column, which under RAINFALL_MODE NONE then drains to residual
+                // (θ 0.165, ψ 7.8 m on the A3 column) and the gradient reversed.
+                const double z_probe = invert_m - 0.5 * gap;
                 const auto p = paramsOf(bed.cell);
-                th_a = state_.theta_sigma[static_cast<std::size_t>(j) * static_cast<std::size_t>(state_.n_cells) + ci];
-                const double Se = std::clamp((th_a - state_.theta_r[ci]) /
-                                             std::max(state_.theta_s[ci] - state_.theta_r[ci], kTiny), 1.0e-6, 1.0);
-                psi_a = soil::suctionAtSaturation(p, Se);
+                psi_a = std::max(0.5 * gap, kTiny);
+                th_a  = soil::waterContent(p, psi_a);
                 K_a   = soil::conductivity(p, psi_a);
                 dz    = std::max(md.z_m - z_probe, kTiny);
                 // Donor-side (upwind) conductivity: the rise is carried by the
                 // subsoil between the table and the root zone, whose K at the
-                // probe layer is what limits it (Gardner's steady upward flux).
-                // The harmonic mean with the root zone's own K was tried first
-                // and throttled the flux to ~0.1 mm/day at field capacity.
+                // probe is what limits it (Gardner's steady upward flux). The
+                // harmonic mean with the root zone's own K was tried first and
+                // throttled the flux to ~0.1 mm/day at field capacity.
                 q_raw = K_a * bed.area * ((md.psi_m - psi_a) / dz - 1.0);
                 q_up = std::clamp(q_raw, 0.0, md.cap_rate);
             }
