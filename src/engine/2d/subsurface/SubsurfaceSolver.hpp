@@ -485,14 +485,8 @@ private:
     /// The capillary share of the CURRENT gather (set by gatherNode, read by
     /// the firing's ledger split).
     double                 cap_gathered_ = 0.0;
-    /// Stage 3b diagnostics: Darcy rise requested / booked (m³, cumulative)
-    /// and the call counter behind the OPENSWMM_DARCY_DEBUG stride.
-    double                 darcy_requested_ = 0.0, darcy_booked_ = 0.0;
+    /// Stage 3b: the call counter behind the OPENSWMM_DARCY_DEBUG stride.
     long                   darcy_dbg_calls_ = 0;
-public:
-    double darcyRequested() const noexcept { return darcy_requested_; }
-    double darcyBooked() const noexcept { return darcy_booked_; }
-private:
     /// T7.4: the router's published node species rows (not owned).
     const double* node_row_conc_ = nullptr;
     int           node_row_ns_   = 0;

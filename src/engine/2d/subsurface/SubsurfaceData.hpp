@@ -286,6 +286,9 @@ struct SubsurfaceState {
     /// capillary ET into storage-node LIDs (diagnostic split, not a second
     /// outflow — continuityResidual uses led_et alone).
     double led_lid_caprise = 0.0;
+    /// UrbanEVA Stage 3b diagnostics: Darcy rise requested / booked through node beds
+    /// (m³, cumulative; the booked share is inside led_node).
+    double led_darcy_req = 0.0, led_darcy_booked = 0.0;
     double led_infil_in = 0.0;   ///< q⁺ delivered from the surface
     double led_link     = 0.0;   ///< G-X3: conduit seepage delivered in
     /// Diagnostic split of `led_infil_in`: the share booked from 1D
