@@ -505,30 +505,6 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
         const bool darcy = capd != nullptr && capd->mode == 1 && ctx.twod_io.surface_router != nullptr &&
             ctx.twod_io.surface_router->subsurface().active() &&
             n < static_cast<int>(ctx.nodes.aquifer2d_bed.size()) && ctx.nodes.aquifer2d_bed[static_cast<std::size_t>(n)];
-        if (darcy) {
-            const LidNodeCell* low = nullptr;
-            for (const auto& c : state.cells) if (c.kind == LidNodeLayerKind::Media && c.geometric_volume > 0.0) low = &c;
-            auto& sub = ctx.twod_io.surface_router->subsurface();
-            if (low != nullptr && low->porosity > 0.0) {
-                const double th = std::clamp(low->theta, 1.0e-4, low->porosity);
-                const double psi_m = low->suction * std::pow(low->porosity / th, capd->ch_b);
-                const double k_m = low->conductivity * std::pow(th / low->porosity, 2.0 * capd->ch_b + 3.0);
-                // The rise is held by suction, so it can fill the root zone only up
-                // to FIELD CAPACITY (the LID drainage law frees everything above
-                // it): the deliverable volume is the MEDIA column's deficit below
-                // FC, not the bottom cell's pore space — filling to porosity made
-                // the water drain straight back down (316 m³ up, 27 m³ net on the
-                // loam test deck).
-                double fc_deficit = 0.0;
-                for (const auto& c : state.cells)
-                    if (c.kind == LidNodeLayerKind::Media && c.top > ctx.nodes.depth[n])
-                        fc_deficit += std::max(0.0, (c.field_capacity - c.theta) * c.geometric_volume);
-                sub.setBedMediaState(n, ctx.nodes.invert_elev[n] + 0.5 * (low->top + low->bottom), psi_m, k_m,
-                                     fc_deficit / dt, capd->reach / rainDepth(ctx));
-            } else {
-                sub.clearBedMediaState(n);
-            }
-        }
 #else
         const bool darcy = false;
 #endif
@@ -676,6 +652,35 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
                 std::fprintf(stderr, "[lid-darcy] step %ld delivered %.3f fill %.3f left %.3f fc_deficit_after %.3f above_fc %.3f node_depth %.4f node_vol %.3f lat_flow %.4e aq_in %.4e (ft3, ft, cfs)\n",
                              dbg_calls, std::max(0.0, ctx.nodes.aquifer_inflow[static_cast<std::size_t>(n)]) * dt, bottom_fill, left,
                              fcdef, above_fc, ctx.nodes.depth[n], ctx.nodes.volume[n], ctx.nodes.lat_flow[n], ctx.nodes.aquifer_inflow[static_cast<std::size_t>(n)]);
+            }
+        }
+        // Publish the media state for the next step's request AFTER this step's
+        // delivery has been absorbed: published before it, the deficit was
+        // requested twice (the delivery lands one routing step after the
+        // request) and the second delivery hit a full root zone and drained back
+        // down the bed — 6,763 m³ booked for 1,928 m³ of media ET on the A3 column.
+        if (darcy) {
+            const LidNodeCell* low = nullptr;
+            for (const auto& c : state.cells) if (c.kind == LidNodeLayerKind::Media && c.geometric_volume > 0.0) low = &c;
+            auto& sub = ctx.twod_io.surface_router->subsurface();
+            if (low != nullptr && low->porosity > 0.0) {
+                const double th = std::clamp(low->theta, 1.0e-4, low->porosity);
+                const double psi_m = low->suction * std::pow(low->porosity / th, capd->ch_b);
+                const double k_m = low->conductivity * std::pow(th / low->porosity, 2.0 * capd->ch_b + 3.0);
+                // The rise is held by suction, so it can fill the root zone only up
+                // to FIELD CAPACITY (the LID drainage law frees everything above
+                // it): the deliverable volume is the MEDIA column's deficit below
+                // FC, not the bottom cell's pore space — filling to porosity made
+                // the water drain straight back down (316 m³ up, 27 m³ net on the
+                // loam test deck).
+                double fc_deficit = 0.0;
+                for (const auto& c : state.cells)
+                    if (c.kind == LidNodeLayerKind::Media && c.top > ctx.nodes.depth[n])
+                        fc_deficit += std::max(0.0, (c.field_capacity - c.theta) * c.geometric_volume);
+                sub.setBedMediaState(n, ctx.nodes.invert_elev[n] + 0.5 * (low->top + low->bottom), psi_m, k_m,
+                                     fc_deficit / dt, capd->reach / rainDepth(ctx));
+            } else {
+                sub.clearBedMediaState(n);
             }
         }
 #endif
