@@ -513,9 +513,18 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
                 const double th = std::clamp(low->theta, 1.0e-4, low->porosity);
                 const double psi_m = low->suction * std::pow(low->porosity / th, capd->ch_b);
                 const double k_m = low->conductivity * std::pow(th / low->porosity, 2.0 * capd->ch_b + 3.0);
+                // The rise is held by suction, so it can fill the root zone only up
+                // to FIELD CAPACITY (the LID drainage law frees everything above
+                // it): the deliverable volume is the MEDIA column's deficit below
+                // FC, not the bottom cell's pore space — filling to porosity made
+                // the water drain straight back down (316 m³ up, 27 m³ net on the
+                // loam test deck).
+                double fc_deficit = 0.0;
+                for (const auto& c : state.cells)
+                    if (c.kind == LidNodeLayerKind::Media && c.top > ctx.nodes.depth[n])
+                        fc_deficit += std::max(0.0, (c.field_capacity - c.theta) * c.geometric_volume);
                 sub.setBedMediaState(n, ctx.nodes.invert_elev[n] + 0.5 * (low->top + low->bottom), psi_m, k_m,
-                                     std::max(0.0, (low->porosity - low->theta) * low->geometric_volume) / dt,
-                                     capd->reach / rainDepth(ctx));
+                                     fc_deficit / dt, capd->reach / rainDepth(ctx));
             } else {
                 sub.clearBedMediaState(n);
             }
@@ -635,7 +644,8 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
         if (first.geometric_volume > 0.0) first.theta += capture / first.geometric_volume;
         // Stage 3b: water arriving through the aquifer bed wets the column from
         // the bottom up (the unsaturated Darcy rise and, with the table above the
-        // invert, the saturated exchange); what the pores cannot take stays mobile.
+        // invert, the saturated exchange) — MEDIA cells only up to field capacity,
+        // the water the suction can hold; what the pores cannot take stays mobile.
         double bottom_fill = 0.0;
 #ifdef OPENSWMM_HAS_2D
         if (darcy && n < static_cast<int>(ctx.nodes.aquifer_inflow.size())) {
@@ -643,7 +653,8 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
             for (auto it = state.cells.rbegin(); it != state.cells.rend() && left > 0.0; ++it) {
                 auto& c = *it;
                 if (c.top <= ctx.nodes.depth[n] || c.kind == LidNodeLayerKind::Surface) continue;
-                const double room = std::max(0.0, (c.porosity - c.theta) * c.geometric_volume);
+                const double hold = c.kind == LidNodeLayerKind::Media ? c.field_capacity : c.porosity;
+                const double room = std::max(0.0, (hold - c.theta) * c.geometric_volume);
                 const double put = std::min(room, left);
                 if (put > 0.0 && c.geometric_volume > 0.0) {
                     c.theta += put / c.geometric_volume; left -= put; bottom_fill += put;

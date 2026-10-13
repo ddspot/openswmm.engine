@@ -1275,7 +1275,7 @@ void DefaultReportPlugin::write_results(std::FILE* f,
                 // Stage 3b: the Darcy rise is part of Node Exchange; requested vs booked
                 // tells whether the drainable-water cap throttled it.
                 row2("  (LID Darcy Rise, req.) .", g.led_darcy_req);
-                row2("  (LID Darcy Rise, booked)", g.led_darcy_booked);
+                row2("  (LID Darcy Rise, bkd) ..", g.led_darcy_booked);
             }
             row2("Saturation Excess Return .", g.led_dunne);
             row2("Final Stored Volume ......", g.liveStorage());
