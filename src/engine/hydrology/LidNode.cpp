@@ -665,6 +665,18 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
                 }
             }
             state.caprise_total += bottom_fill;
+            static const int dbg_stride = [] { const char* e = std::getenv("OPENSWMM_DARCY_DEBUG"); return e ? std::max(1, std::atoi(e)) : 0; }();
+            static long dbg_calls = 0;
+            if (dbg_stride > 0 && (++dbg_calls % dbg_stride) == 0) {
+                double fcdef = 0.0, above_fc = 0.0;
+                for (const auto& c : state.cells) if (c.kind == LidNodeLayerKind::Media) {
+                    fcdef += std::max(0.0, (c.field_capacity - c.theta) * c.geometric_volume);
+                    above_fc += std::max(0.0, (c.theta - c.field_capacity) * c.geometric_volume);
+                }
+                std::fprintf(stderr, "[lid-darcy] step %ld delivered %.3f fill %.3f left %.3f fc_deficit_after %.3f above_fc %.3f node_depth %.4f node_vol %.3f lat_flow %.4e aq_in %.4e (ft3, ft, cfs)\n",
+                             dbg_calls, std::max(0.0, ctx.nodes.aquifer_inflow[static_cast<std::size_t>(n)]) * dt, bottom_fill, left,
+                             fcdef, above_fc, ctx.nodes.depth[n], ctx.nodes.volume[n], ctx.nodes.lat_flow[n], ctx.nodes.aquifer_inflow[static_cast<std::size_t>(n)]);
+            }
         }
 #endif
         state.captured_flow = (capture + intercepted + bottom_fill) / dt;
