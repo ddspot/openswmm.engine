@@ -652,9 +652,12 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
             double left = std::max(0.0, ctx.nodes.aquifer_inflow[static_cast<std::size_t>(n)]) * dt;
             for (auto it = state.cells.rbegin(); it != state.cells.rend() && left > 0.0; ++it) {
                 auto& c = *it;
-                if (c.top <= ctx.nodes.depth[n] || c.kind == LidNodeLayerKind::Surface) continue;
-                const double hold = c.kind == LidNodeLayerKind::Media ? c.field_capacity : c.porosity;
-                const double room = std::max(0.0, (hold - c.theta) * c.geometric_volume);
+                // MEDIA only: capillary water is held by the soil's suction. An
+                // AGGREGATE below the media has no retention — filled, it drains to
+                // the mobile store the same step and back down the bed (A3: 805 mm/yr
+                // "rise", 565 of it recirculating and evaporating as open water).
+                if (c.top <= ctx.nodes.depth[n] || c.kind != LidNodeLayerKind::Media) continue;
+                const double room = std::max(0.0, (c.field_capacity - c.theta) * c.geometric_volume);
                 const double put = std::min(room, left);
                 if (put > 0.0 && c.geometric_volume > 0.0) {
                     c.theta += put / c.geometric_volume; left -= put; bottom_fill += put;
