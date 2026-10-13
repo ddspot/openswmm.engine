@@ -70,6 +70,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <limits>
 
 namespace openswmm::twoD {
@@ -716,38 +717,47 @@ void SubsurfaceSolver::sampleNodeExchange(const NodeData* nodes, double dt) {
         // UrbanEVA Stage 3b (CAPILLARY DARCY): with the table below the
         // invert, an unsaturated Darcy flux between the aquifer soil halfway
         // down the gap (SIGMA layer state) and the LID's lowest MEDIA cell,
-        // upward when the media is the drier side: q = K̄·((ψ_m − ψ_a)/Δz − 1).
-        // Bounded by the media's free pore space; the drain cap below bounds
-        // it against the cell's drainable water like any other withdrawal.
+        // upward when the media is the drier side: q = K_a·((ψ_m − ψ_a)/Δz − 1).
+        // Bounded by the media's free pore space here and by the cell's
+        // drainable water below. It is a SEPARATE flux from the saturated
+        // exchange: the first cut added it to `Q` before the node-water cap,
+        // and since a LID node's drainage is almost always capped by its own
+        // mobile water, the cap swallowed the upward share entirely (A3
+        // pinned: 0.06 mm/yr booked). The two are capped on their own and
+        // summed afterwards.
+        double q_up = 0.0;
+        static const int dbg_stride = [] { const char* e = std::getenv("OPENSWMM_DARCY_DEBUG"); return e ? std::max(1, std::atoi(e)) : 0; }();
         if (b < bed_media_.size() && bed_media_[b].set &&
             static_cast<GwClosure>(state_.closure[ci]) == GwClosure::SIGMA) {
             const auto& md = bed_media_[b];
             const double invert_m = nodes->invert_elev[ni] * l12;
             const double gap = invert_m - h_gw;
             const double L   = std::max(state_.zs[ci] - state_.hg[ci], 0.0);
+            double psi_a = 0.0, K_a = 0.0, dz = 0.0, th_a = 0.0; int j = -1; double q_raw = 0.0;
             if (gap > 0.0 && gap < md.reach && L > kTiny && state_.m_layers > 0) {
                 const double z_probe = invert_m - 0.5 * gap;                       // halfway down the gap
                 const double depth   = (state_.z_bed[ci] + state_.zs[ci]) - z_probe; // below the cell surface
-                const int j = std::clamp(static_cast<int>(std::floor(depth / (L / state_.m_layers))),
-                                         0, state_.m_layers - 1);
+                j = std::clamp(static_cast<int>(std::floor(depth / (L / state_.m_layers))),
+                               0, state_.m_layers - 1);
                 const auto p = paramsOf(bed.cell);
-                const double th_a = state_.theta_sigma[static_cast<std::size_t>(j) * static_cast<std::size_t>(state_.n_cells) + ci];
+                th_a = state_.theta_sigma[static_cast<std::size_t>(j) * static_cast<std::size_t>(state_.n_cells) + ci];
                 const double Se = std::clamp((th_a - state_.theta_r[ci]) /
                                              std::max(state_.theta_s[ci] - state_.theta_r[ci], kTiny), 1.0e-6, 1.0);
-                const double psi_a = soil::suctionAtSaturation(p, Se);
-                const double K_a   = soil::conductivity(p, psi_a);
-                const double dz    = std::max(md.z_m - z_probe, kTiny);
+                psi_a = soil::suctionAtSaturation(p, Se);
+                K_a   = soil::conductivity(p, psi_a);
+                dz    = std::max(md.z_m - z_probe, kTiny);
                 // Donor-side (upwind) conductivity: the rise is carried by the
                 // subsoil between the table and the root zone, whose K at the
                 // probe layer is what limits it (Gardner's steady upward flux).
                 // The harmonic mean with the root zone's own K was tried first
-                // and throttled the flux to ~0.1 mm/day at field capacity —
-                // the resistance of the root zone's bottom centimetres is not
-                // what limits capillary rise into it. `md.K_m` stays published
-                // for the kernel's reading of the media state.
-                const double q_up = K_a * bed.area * ((md.psi_m - psi_a) / dz - 1.0);
-                if (q_up > 0.0) Q += std::min(q_up, md.cap_rate);
+                // and throttled the flux to ~0.1 mm/day at field capacity.
+                q_raw = K_a * bed.area * ((md.psi_m - psi_a) / dz - 1.0);
+                q_up = std::clamp(q_raw, 0.0, md.cap_rate);
             }
+            if (dbg_stride > 0 && (++darcy_dbg_calls_ % dbg_stride) == 0)
+                std::fprintf(stderr, "[darcy] call %ld bed %zu gap %.3f reach %.2f L %.2f j %d th_a %.3f psi_a %.3f K_a %.2e "
+                                     "psi_m %.3f z_m %.3f dz %.3f cap_rate %.2e q_raw %.3e q_up %.3e Qsat %.3e\n",
+                             darcy_dbg_calls_, b, gap, md.reach, L, j, th_a, psi_a, K_a, md.psi_m, md.z_m, dz, md.cap_rate, q_raw, q_up, Q);
         }
         if (Q > 0.0) {
             // Cap an aquifer→pipe drain at the cell's drainable water.
@@ -833,6 +843,21 @@ void SubsurfaceSolver::sampleNodeExchange(const NodeData* nodes, double dt) {
                 if (ni < node_drawn_gw_.size())
                     node_drawn_gw_[ni] += std::min(-Q * dt, std::max(0.0, held - drawn));
             }
+        }
+        if (q_up > 0.0) {
+            // Stage 3b: the upward share against the cell's drainable water,
+            // net of what the saturated direction already takes this step.
+            const double Sy_col = specificYield(
+                ci, paramsOf(bed.cell), state_.theta_s[ci],
+                std::max(state_.zs[ci] - state_.hg[ci], 0.0),
+                static_cast<GwClosure>(state_.closure[ci]), nullptr);
+            const double avail = state_.hg[ci] * Sy_col * state_.area[ci];
+            const double cap = std::max(0.0, kFaceShare * avail / std::max(dt, kTiny) - std::max(0.0, Q));
+            const double booked = std::min(q_up, cap);
+            if (booked < q_up) ++drain_cap_binds_;
+            Q += booked;
+            darcy_requested_ += q_up * dt;
+            darcy_booked_    += booked * dt;
         }
         if (Q == 0.0) continue;
 
