@@ -1271,6 +1271,15 @@ void DefaultReportPlugin::write_results(std::FILE* f,
             row2("Subsurface ET ............", g.led_et);
             if (g.led_lid_caprise != 0.0)
                 row2("  (LID Capillary ET) .....", g.led_lid_caprise);   // included in Subsurface ET
+            if (ctx.twod_io.surface_router != nullptr) {
+                // Stage 3b: the Darcy rise is part of Node Exchange; requested vs booked
+                // tells whether the drainable-water cap throttled it.
+                const auto& sub = ctx.twod_io.surface_router->subsurface();
+                if (sub.darcyRequested() != 0.0) {
+                    row2("  (LID Darcy Rise, req.) .", sub.darcyRequested());
+                    row2("  (LID Darcy Rise, booked)", sub.darcyBooked());
+                }
+            }
             row2("Saturation Excess Return .", g.led_dunne);
             row2("Final Stored Volume ......", g.liveStorage());
             row2("  (Recharge, internal) ...", g.led_recharge);
