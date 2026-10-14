@@ -920,6 +920,7 @@ cdef extern from "openswmm_infrastructure.h":
     cdef int swmm_lid_node_outlet_set(SWMM_Engine e, int link, int layer, int top)
     cdef int swmm_lid_node_state_count(SWMM_Engine e, int node)
     cdef int swmm_lid_node_state_get(SWMM_Engine e, int node, int row, int* layer, double* bottom, double* top, double* moisture)
+    cdef int swmm_lid_node_ledger_get(SWMM_Engine e, int node, double* canopy_volume, double* canopy_evap, double* media_evap, double* irrigation, double* capillary_rise)
     # LID controls
     cdef int swmm_lid_add(SWMM_Engine e, const char* id, int type)
     cdef int swmm_lid_set_surface(SWMM_Engine e, int idx, double storage, double roughness, double slope)

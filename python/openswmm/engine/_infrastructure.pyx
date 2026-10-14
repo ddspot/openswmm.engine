@@ -1003,6 +1003,17 @@ class LIDs:
             result.append({"layer": layer, "bottom": bottom, "top": top, "moisture": moisture})
         return result
 
+    def node_ledger(self, node):
+        """UrbanEVA vegetation-law ledgers of a storage-node LID, in model volume
+        units: ``canopy_volume`` now, cumulative ``canopy_evap`` (interception),
+        ``media_evap`` (SURFACE/MEDIA evaporation + transpiration), ``irrigation``
+        and ``capillary_rise``. Zeros without a VEGETAT row."""
+        cdef SWMM_Engine h = _h(self._solver)
+        cdef int n = _resolve_index(h, node, swmm_node_index, swmm_node_count, "Node")
+        cdef double canopy = 0, ei = 0, media = 0, irr = 0, cap = 0
+        _check(swmm_lid_node_ledger_get(h, n, &canopy, &ei, &media, &irr, &cap))
+        return {"canopy_volume": canopy, "canopy_evap": ei, "media_evap": media, "irrigation": irr, "capillary_rise": cap}
+
     def node_assignment(self, node):
         """Return (control index, InitSat %) or None for an ordinary node."""
         cdef SWMM_Engine h = _h(self._solver)
