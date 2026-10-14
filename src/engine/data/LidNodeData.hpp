@@ -27,7 +27,9 @@ struct LidNodeLayer {
 };
 /// UrbanEVA vegetation on a storage-node LID (``NAME VEGETAT …`` row, the
 /// SWMM-UrbanEVA grammar): crop factor and leaf-area index with MONTHLY
-/// patterns, Braden interception (I-3) with wetted-fraction canopy
+/// patterns, Braden interception (I-3: the canopy takes
+/// ``Smax · (1 − 1/(1 + SCF·P/Smax))`` per hour of a rain intensity ``P`` and
+/// its store fills to ``Smax · SCF``) with wetted-fraction canopy
 /// evaporation (Ei-2), unstressed transpiration (Et-1) and square-root
 /// soil-moisture stress (Es-2) on the MEDIA water, seasonal Ks evapfactors
 /// (``NAME EVAPFACTORS winter spring summer``). The storage node's Fevap stays

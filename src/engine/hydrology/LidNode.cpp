@@ -523,7 +523,9 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
         auto& first = state.cells.front();
         // UrbanEVA vegetation law (when the control carries a VEGETAT row), as
         // lidproc.c getEvapRatesIntercep: Ep = E_pot · Ks(season) · Kc · Kc_pattern[month];
-        // canopy Smax = SL · LAI(month), SCF = 1 − 0.7^LAI, wetness f = (S/Smax)^(2/3);
+        // canopy Smax = SL · LAI(month) per unit canopy area, SCF = 1 − 0.7^LAI, the
+        // store fills to Smax · SCF at Braden's rate I(P), wetness f = (S/Smax)^(2/3)
+        // on the whole-area depth S (so f ≤ SCF^(2/3), as lidproc.c has it);
         // Ei = Ep · SCF · f (Ei-2); Es = (1 − SCF) · Ep · sqrt(min(w/nFC, 1)) (Es-2);
         // Et = (SCF · Ep − Ei) · (1 − f) (Et-1) — the interception evaporation comes
         // off the transpiration share, so Ei + Es + Et ≤ Ep. w is the relative
@@ -598,9 +600,8 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
             }
         }
         // Lateral inflows enter the top of the column — through the canopy
-        // first (Braden I-3: the store fills before any water passes). Saturated
-        // capacity that cannot be retained stays in the hydraulic inflow and
-        // raises the HGL.
+        // first (Braden I-3 below). Saturated capacity that cannot be retained
+        // stays in the hydraulic inflow and raises the HGL.
         double top_inflow = std::max(0.0, ctx.nodes.lat_flow[n]);
 #ifdef OPENSWMM_HAS_2D
         // Water arriving through the aquifer bed is groundwater: it joins the
@@ -610,9 +611,20 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
             top_inflow = std::max(0.0, top_inflow - std::max(0.0, ctx.nodes.aquifer_inflow[static_cast<std::size_t>(n)]));
 #endif
         const double inflow_vol = top_inflow * dt;
+        // Braden (I-3) interception as lidproc.c getInterceptionRate: at a rain
+        // intensity P the canopy takes I = Smax · (1 − 1 / (1 + SCF · P / Smax))
+        // per hour (Smax = SL · LAI, the storage per unit canopy area; I ≤ SCF · P),
+        // and the store — held over the canopy fraction SCF of the area — fills
+        // to Smax · SCF. P − I reaches the surface cell. A bucket that fills at
+        // the full rain rate to Smax over-intercepts by ~2/3 on the St. Arnold
+        // lysimeter (Ei 108 vs 64 mm/a).
         double intercepted = 0.0;
-        if (smax_vol > 0.0) {
-            intercepted = std::min(inflow_vol, std::max(0.0, smax_vol - state.canopy_volume));
+        if (smax_vol > 0.0 && scf > 0.0 && inflow_vol > 0.0 && first.area > 0.0) {
+            const double smax_depth = smax_vol / first.area;             // ft per unit canopy area
+            const double p_per_h = top_inflow / first.area * 3600.0;    // ft/h over the LID area
+            const double i_per_h = smax_depth * (1.0 - 1.0 / (1.0 + scf * p_per_h / smax_depth));
+            const double headroom = std::max(0.0, smax_vol * scf - state.canopy_volume);
+            intercepted = std::min({inflow_vol, i_per_h / 3600.0 * dt * first.area, headroom});
             state.canopy_volume += intercepted;
         }
         const double capacity = std::max(0.0, (first.porosity - first.theta) * first.geometric_volume);
@@ -688,7 +700,8 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
         if (capture > 0) state.quality_transfers.push_back({-2, 0, capture});
         state.treated_volume += capture + bottom_fill;
         ctx.nodes.lat_flow[n] -= state.captured_flow;
-        // Canopy evaporation (Ei-2): Ep · (S/Smax)^(2/3) · SCF, bounded by the store.
+        // Canopy evaporation (Ei-2): Ep · (S/Smax)^(2/3) · SCF, bounded by the store
+        // (S the whole-area depth, Smax per unit canopy area — lidproc.c's factor).
         double canopy_wet = 0.0, ei = 0.0;
         if (veg != nullptr && smax_vol > 0.0 && state.canopy_volume > 0.0) {
             canopy_wet = std::pow(std::min(1.0, state.canopy_volume / smax_vol), 2.0 / 3.0);
