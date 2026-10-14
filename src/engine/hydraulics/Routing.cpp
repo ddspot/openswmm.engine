@@ -698,7 +698,7 @@ void Router::initNodeFlows(SimulationContext& ctx, double dt, double evap_rate) 
                 // ET is spent too — it must not draw mobile water a second time.)
                 stor_evap_rate = area > 0.0
                     ? std::max(0.0, potential - (state.evap_volume + state.caprise_step) / dt) / area : 0.0;
-                if (state.richards) stor_evap_rate = 0; // one ET budget inside the ODE
+                if (state.richards || state.veg_law) stor_evap_rate = 0; // one ET budget inside the ODE / the vegetation law feeds from soil and canopy only
             }
 
             // exfil_cfs is pre-computed by ExfilSolver::computeAll() (called before

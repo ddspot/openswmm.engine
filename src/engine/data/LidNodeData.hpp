@@ -136,6 +136,7 @@ struct LidNodeState {
     long irrigation_last_day = -1; ///< whole-day index of the last daily check
     double caprise_total = 0.0;    ///< ft3, cumulative capillary rise from the aquifer (ET_DEPTH: as ET; DARCY: into the media)
     double caprise_step = 0.0;     ///< ft3, ET_DEPTH capillary ET this step (not in evap_volume: the aquifer books it)
+    bool veg_law = false;          ///< VEGETAT law active: ET feeds from canopy + SURFACE/MEDIA only (no aggregate, no mobile water)
 };
 struct LidNodeConfig {
     int control = -1;
