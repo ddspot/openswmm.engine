@@ -252,6 +252,20 @@ SWMM_ENGINE_API int swmm_lid_node_state_get(SWMM_Engine engine, int node, int ro
         cell.theta + (cell.porosity - cell.theta) * std::clamp((c.nodes.depth[node] - cell.bottom) / (cell.top - cell.bottom), 0.0, 1.0);
     return SWMM_OK;
 }
+SWMM_ENGINE_API int swmm_lid_node_ledger_get(SWMM_Engine engine, int node, double* canopy_volume, double* canopy_evap,
+                                             double* media_evap, double* irrigation, double* capillary_rise) {
+    CHECK_HANDLE(engine);
+    if (!canopy_volume || !canopy_evap || !media_evap || !irrigation || !capillary_rise) return SWMM_ERR_BADPARAM;
+    const auto& c = to_engine(engine)->context();
+    CHECK_INDEX(node >= 0 && node < c.n_nodes());
+    const int r = c.node_subtypes.storage_row(node);
+    CHECK_INDEX(r >= 0);
+    const auto& s = c.node_subtypes.storages.lid_state[r];
+    const double v = openswmm::ucf::Ucf[openswmm::ucf::VOLUME][openswmm::ucf::getUnitSystem(static_cast<int>(c.options.flow_units))];
+    *canopy_volume = s.canopy_volume * v; *canopy_evap = s.canopy_evap_total * v; *media_evap = s.transp_total * v;
+    *irrigation = s.irrigation_total * v; *capillary_rise = s.caprise_total * v;
+    return SWMM_OK;
+}
 SWMM_ENGINE_API int swmm_lid_richards_state_get(SWMM_Engine engine, int node, int row, double* pressure, double* head, double* water) {
     CHECK_HANDLE(engine); if (!pressure || !head || !water) return SWMM_ERR_BADPARAM;
     const auto& c = to_engine(engine)->context(); CHECK_INDEX(node >= 0 && node < c.n_nodes());

@@ -743,6 +743,13 @@ SWMM_ENGINE_API int swmm_lid_node_outlet_set(SWMM_Engine engine, int link, int l
  * each MEDIA layer is discretized into multiple rows. */
 SWMM_ENGINE_API int swmm_lid_node_state_count(SWMM_Engine engine, int node);
 SWMM_ENGINE_API int swmm_lid_node_state_get(SWMM_Engine engine, int node, int row, int* layer, double* bottom, double* top, double* moisture);
+/** UrbanEVA vegetation-law ledgers of a storage-node LID in project volume
+ * units: water on the canopy now, and the cumulative canopy (interception)
+ * evaporation, SURFACE/MEDIA evaporation + transpiration, irrigation applied
+ * and capillary rise from the aquifer (fork branch urbaneva/stage1-vegetat).
+ * Zero on a node without the VEGETAT row. */
+SWMM_ENGINE_API int swmm_lid_node_ledger_get(SWMM_Engine engine, int node, double* canopy_volume, double* canopy_evap,
+                                             double* media_evap, double* irrigation, double* capillary_rise);
 /** Richards pressure/total head in project length units, complete cell water
  * in project volume units. Returns BADPARAM on the existing formulation. */
 SWMM_ENGINE_API int swmm_lid_richards_state_get(SWMM_Engine, int node, int row, double* pressure, double* head, double* water);
