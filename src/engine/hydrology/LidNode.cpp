@@ -705,9 +705,19 @@ void prepareStep(SimulationContext& ctx, double dt, double evaporation) {
         double evap = veg != nullptr
             ? (1.0 - scf) * ep_vol * soil_g + std::max(0.0, scf * ep_vol - ei) * (1.0 - canopy_wet)
             : ep_vol;
-        // Evaporation draws from top to bottom, never below wilting point.
+        // Evaporation draws from top to bottom, never below wilting point. Under
+        // the vegetation law only the SURFACE and MEDIA cells feed it: UrbanEVA's
+        // getEvapRatesIntercep draws Es/Et from the soil layer and Ei from the
+        // canopy, never from the storage layer, and the Routing draw on the
+        // node's mobile water is blocked as well (veg_law) — on the St. Arnold
+        // grass lysimeter (FC 0.21 / WP 0.18, 48 mm of plant-available water)
+        // the transit water in the 3 m aggregate and the free water at the node
+        // bottom supplied a third of the column's ET and took seepage from
+        // 476 to 353 mm/yr against the UrbanEVA binary's own column.
         const double evap_before = state.evap_volume;
+        state.veg_law = veg != nullptr;
         for (auto& c : state.cells) {
+            if (veg != nullptr && c.kind == LidNodeLayerKind::Aggregate) continue;
             const double take = std::min(evap, std::max(0.0, (c.theta - c.wilting_point) * c.geometric_volume));
             if (c.geometric_volume > 0.0) c.theta -= take / c.geometric_volume;
             state.evap_volume += take; evap -= take;
