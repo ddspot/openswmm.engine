@@ -1454,8 +1454,24 @@ void SubsurfaceSolver::fireCell(int i, double dt, SurfaceStateData& surf, double
         // two). The existing caps bound it to what the table holds.
         if (et_caprise && state_.m_layers > 0) {
             const double dz_bot = L0 / static_cast<double>(state_.m_layers);
-            const double grad = 1.0 - psi_bot / std::max(0.5 * dz_bot, kTiny);
-            q0 = grad >= 0.0 ? k_bot * grad : std::sqrt(std::max(k_bot, 0.0) * p.Ks) * grad;
+            const double half = std::max(0.5 * dz_bot, kTiny);
+            const double grad = 1.0 - psi_bot / half;
+            if (grad >= 0.0) {
+                q0 = k_bot * grad;
+            } else {
+                // The rise can only bring the bottom layer to hydrostatic
+                // equilibrium with the table, θ(ψ = dz/2) — the state where
+                // the gradient itself vanishes. Without this cap the first
+                // build filled a thin winter layer past equilibrium in one
+                // step, the layer drained back on the next, and the two
+                // directions were booked gross: 4.6 m/yr of "capillary rise"
+                // against −4.5 m/yr of recharge on the A3 column, all of it
+                // in two months with the table near the ground.
+                const double theta_eq = soil::waterContent(p, half);
+                const double fill = std::max(theta_eq - theta_bot, 0.0) * dz_bot / std::max(dt, kTiny);
+                const double q_up = std::min(std::sqrt(std::max(k_bot, 0.0) * p.Ks) * (-grad), fill);
+                q0 = -q_up;
+            }
         }
     } else if (cl == GwClosure::ENSLAVED) {
         q0 = q_in - q_et;
