@@ -156,6 +156,14 @@ struct GwOptions {
     std::string gw_et = "AUTO";
     double wilting_suction = 150.0; ///< automatic SI default; authored values are project lengths
     bool wilting_suction_set = false;
+    /// UrbanEVA mesh route (fork): `ROOT_DEPTH <len>` — under closure B the ET
+    /// demand is drawn from every σ-layer within this depth below the ground,
+    /// shared in proportion to each layer's plant-available water times its
+    /// own Feddes stress (one root-zone store, as UrbanEVA's soil layer). 0
+    /// (default) keeps the top-layer-only draw. Authored in project length
+    /// units, converted at initialize().
+    double root_depth = 0.0;
+    bool root_depth_set = false;
     /// G-X2: `NODE_ENROLMENT AUTO | ROWS`. AUTO (default, program plan
     /// §B.4b): every node whose [COORDINATES] fall in a mesh cell gets a bed
     /// (direct Darcy, the cell's area) unless a `[2D_AQUIFER_NODE]` row
