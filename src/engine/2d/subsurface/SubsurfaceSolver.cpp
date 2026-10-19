@@ -251,6 +251,7 @@ std::string SubsurfaceSolver::initialize(const MeshData& mesh,
     if(options_.gw_et=="AUTO")options_.gw_et=options_.per_subcatch?"NONE":"BOTH";
     if(options_.link_seepage==GwLinkMode::DEFAULT)options_.link_seepage=options_.per_subcatch?GwLinkMode::AUTO:GwLinkMode::TWO_WAY;
     options_.wilting_suction=cfg.options.wilting_suction_set?cfg.options.wilting_suction*uf.length:150.0;
+    options_.root_depth=cfg.options.root_depth_set?std::max(0.0,cfg.options.root_depth*uf.length):0.0;
     node_beds_ = cfg.node_beds;
     mesh_  = &mesh;
     edges_ = &edges;
@@ -1433,10 +1434,29 @@ void SubsurfaceSolver::fireCell(int i, double dt, SurfaceStateData& surf, double
         // gravity drainage. It is passed INTO the sweep as `q0_phys` and
         // comes back inside `f_bot` together with the handover, which is why
         // the saturated update above books `q0` and not `f_bot`.
-        q0 = soil::conductivity(p, soil::suctionAtSaturation(
-                 p, std::clamp((theta_bot - state_.theta_r[u]) /
-                                   std::max(ts - state_.theta_r[u], kTiny),
-                               1.0e-6, 1.0)));
+        const double se_bot = std::clamp((theta_bot - state_.theta_r[u]) /
+                                             std::max(ts - state_.theta_r[u], kTiny),
+                                         1.0e-6, 1.0);
+        const double psi_bot = soil::suctionAtSaturation(p, se_bot);
+        const double k_bot = soil::conductivity(p, psi_bot);
+        q0 = k_bot;
+        // UrbanEVA mesh route (fork): under GW_ET CAPILLARY_RISE / BOTH the
+        // bottom face carries the full Darcy flux between the table (ψ = 0)
+        // and the bottom layer's centre, dz/2 above it: downward positive,
+        // q0 = K·(1 − ψ_bot / (dz/2)). Gravity drainage is recovered when
+        // the layer is wet (ψ_bot → 0); a dry bottom layer draws water UP
+        // from the table — the path the gravity-only face never had, which
+        // left every vegetated cell over a 1.5 m table with kapA = 0 while
+        // NatUrWB books 136 mm/yr on the same soil. The upward branch is
+        // carried by the geometric mean of Ks and K(ψ_bot): the fringe
+        // between the table and the layer centre is part saturated, part at
+        // the layer's own state (Gardner's steady rise sits between the
+        // two). The existing caps bound it to what the table holds.
+        if (et_caprise && state_.m_layers > 0) {
+            const double dz_bot = L0 / static_cast<double>(state_.m_layers);
+            const double grad = 1.0 - psi_bot / std::max(0.5 * dz_bot, kTiny);
+            q0 = grad >= 0.0 ? k_bot * grad : std::sqrt(std::max(k_bot, 0.0) * p.Ks) * grad;
+        }
     } else if (cl == GwClosure::ENSLAVED) {
         q0 = q_in - q_et;
     } else if (L0 > 0.0) {
@@ -1686,6 +1706,7 @@ void SubsurfaceSolver::fireCell(int i, double dt, SurfaceStateData& surf, double
             trial=original;cs={};cs.L_old=L0;cs.L_new=std::max(0.0,zs-h);cs.dt=dt;
             cs.q_in=q_in;cs.q_et=q_et;cs.q0_phys=q0;cs.handover_theta=ts-Sy;
             cs.wilting_suction=options_.wilting_suction;cs.capillary=options_.capillary_diff;
+            cs.root_depth=options_.root_depth;
             sigma::advanceColumn(p,trial.data(),state_.m_layers,1,cs);
             // ts * delta_h = external + the actual column-to-table water.
             const double balance = ts*(h-hg0)-external-

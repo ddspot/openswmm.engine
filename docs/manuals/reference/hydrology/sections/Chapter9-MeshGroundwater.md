@@ -271,6 +271,25 @@ column retains water above a falling table. The design record writes
 \f$\theta_s\f$; \f$\theta_s - \theta_{bot}\f$ is the textbook specific yield
 and what the code uses.
 
+**Root uptake over several layers (fork `urbaneva/stage1-vegetat`).** With
+`[2D_AQUIFER_OPTIONS] ROOT_DEPTH <len>` the ET demand is no longer taken from the
+top layer alone: every layer whose top lies within the root depth takes a share
+in proportion to its plant-available water (the part of the layer inside the
+root depth, above residual) times its own Feddes stress, with a second pass
+handing what a capped layer could not give to the layers with water left. The
+root zone then behaves as one store drawn down together, as UrbanEVA's soil
+layer does; the reported stress is the availability-weighted mean. Default 0
+keeps the top-layer draw.
+
+**Capillary rise across the table (same fork).** Under `GW_ET CAPILLARY_RISE` or
+`BOTH` the bottom face carries the full Darcy flux between the table (\f$\psi = 0\f$)
+and the bottom layer's centre, \f$dz/2\f$ above it, downward positive:
+\f$q_0 = K\,(1 - \psi_{bot} / (dz/2))\f$. A wet bottom layer recovers the
+gravity drainage above; a dry one draws water up from the table, carried by the
+geometric mean of \f$K_s\f$ and \f$K(\psi_{bot})\f$ and bounded by the caps of
+§9.5. Without this the σ column's bottom face was gravity-only and `CAPILLARY_RISE`
+could not act on it (kapA 0 on a vegetated cell over a 1.5 m table).
+
 Positivity is a per-layer availability share: a layer may not export more than
 it holds above residual in one step. After the update \f$\theta\f$ is
 re-derived from the new geometry. A rising table compresses every layer, and a

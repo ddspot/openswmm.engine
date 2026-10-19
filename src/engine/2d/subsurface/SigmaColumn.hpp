@@ -93,6 +93,10 @@ struct ColumnStep {
     double wilting_suction=150.0; ///< SI suction magnitude; one top-boundary stress evaluation
     double et_stress=0.0;
     double q_et    = 0.0;    ///< ET demand at the top (m/s, ≥ 0)
+    /// Root depth below the ground (m, SI). > 0: the demand is drawn from every
+    /// layer within it, shared by plant-available water × Feddes stress (one
+    /// root-zone store); 0: the top layer alone (legacy).
+    double root_depth = 0.0;
     double handover_theta = -1.0; ///< <0: actual bottom layer; otherwise paired table storage coefficient
     double q0_phys = 0.0;    ///< physical Darcy flux across the table (m/s)
     bool   capillary = false;///< include the diffusive term

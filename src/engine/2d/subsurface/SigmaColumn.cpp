@@ -174,6 +174,8 @@ void advanceColumn(const soil::Params& p, double* theta, int m, int stride,
     // ---- 3. Top boundary: infiltration in, ET out, with acceptance.
     //         The top layer can hold at most (θ_s − θ_top)·dz more water;
     //         anything beyond that is rejected to the surface.
+    static thread_local std::vector<double> sink;      // ET sink per layer (m/s)
+    sink.assign(static_cast<std::size_t>(m), 0.0);
     {
         const double th_top = th_old[0];
         const double headroom = std::max(p.theta_s - th_top, 0.0) * dz0 / st.dt;
@@ -181,16 +183,69 @@ void advanceColumn(const soil::Params& p, double* theta, int m, int stride,
         st.f_top    = accept;
         st.rejected = std::max(st.q_in, 0.0) - accept;
 
-        // ET is limited by what the top layer holds above residual, and by
-        // the Feddes stress at its own suction — no `if (infil <= 0)` gate.
-        const double avail = std::max(th_top - p.theta_r, 0.0) * dz0 / st.dt;
-        const double psi_top = psiOf(th_top);
         // The reviewed wilting suction is a shared SI model parameter.
         const double psi_w = st.wilting_suction;
-        const double stress = soil::feddesStress(psi_top, psi_w);
-        st.et_stress=stress;
-        st.et_taken = std::min(std::max(st.q_et, 0.0) * stress, avail);
-        f[0] = st.f_top - st.et_taken;
+        const double demand = std::max(st.q_et, 0.0);
+        if (st.root_depth > 0.0 && m > 1 && dz0 > 0.0) {
+            // UrbanEVA mesh route (fork): root uptake over every layer within
+            // the root depth, shared in proportion to plant-available water ×
+            // the layer's own Feddes stress — the root zone behaves as ONE
+            // store drawn down together, which is what UrbanEVA's single soil
+            // layer does and what the St. Arnold lysimeter needs (a top-down
+            // draw dries the top layer to wilting while the layers below keep
+            // draining: +26 mm of spring seepage, −24 mm of August ET on the
+            // node LID, step 3 of the lysimeter study). A second pass hands
+            // what a capped layer could not give to the layers with water left.
+            double wsum = 0.0, ssum = 0.0;
+            static thread_local std::vector<double> wgt, avail, strs;
+            wgt.assign(static_cast<std::size_t>(m), 0.0);
+            avail.assign(static_cast<std::size_t>(m), 0.0);
+            strs.assign(static_cast<std::size_t>(m), 0.0);
+            for (int j = 0; j < m; ++j) {
+                const double z_top = static_cast<double>(j) * dz0;
+                if (z_top >= st.root_depth) break;
+                const double frac = std::clamp((st.root_depth - z_top) / dz0, 0.0, 1.0);
+                const double th = th_old[static_cast<std::size_t>(j)];
+                const double a = std::max(th - p.theta_r, 0.0) * dz0 * frac;   // m of water in the rooted part
+                const double stress = soil::feddesStress(psiOf(th), psi_w);
+                avail[static_cast<std::size_t>(j)] = a / st.dt;
+                strs[static_cast<std::size_t>(j)] = stress;
+                wgt[static_cast<std::size_t>(j)] = a * stress;
+                wsum += a * stress; ssum += a;
+            }
+            double taken = 0.0;
+            if (wsum > kTiny) {
+                for (int pass = 0; pass < 2 && demand - taken > kTiny; ++pass) {
+                    double wtot = 0.0;
+                    for (int j = 0; j < m; ++j) {
+                        const auto k = static_cast<std::size_t>(j);
+                        const double room = avail[k] - sink[k];
+                        if (room > kTiny && wgt[k] > 0.0) wtot += wgt[k];
+                    }
+                    if (wtot <= kTiny) break;
+                    const double left = demand - taken;
+                    for (int j = 0; j < m; ++j) {
+                        const auto k = static_cast<std::size_t>(j);
+                        const double room = avail[k] - sink[k];
+                        if (room <= kTiny || wgt[k] <= 0.0) continue;
+                        const double s_j = std::min(left * wgt[k] / wtot * (pass == 0 ? strs[k] : 1.0), room);
+                        sink[k] += s_j; taken += s_j;
+                    }
+                }
+            }
+            st.et_stress = ssum > kTiny ? wsum / ssum : 0.0;   // availability-weighted stress
+            st.et_taken = taken;
+        } else {
+            // Legacy: the top layer alone, limited by what it holds above
+            // residual and by the Feddes stress at its own suction — no
+            // `if (infil <= 0)` gate.
+            const double avail = std::max(th_top - p.theta_r, 0.0) * dz0 / st.dt;
+            const double stress = soil::feddesStress(psiOf(th_top), psi_w);
+            st.et_stress = stress;
+            st.et_taken = std::min(demand * stress, avail);
+            sink[0] = st.et_taken;
+        }
+        f[0] = st.f_top;                          // the sinks are applied per layer below
     }
 
     // ---- 4. Bottom boundary: physical Darcy across the table PLUS the
@@ -208,7 +263,8 @@ void advanceColumn(const soil::Params& p, double* theta, int m, int stride,
     //         the bottom face (the top face is already capped above).
     for (int j = 0; j < m; ++j) {
         const double avail = std::max(w[static_cast<std::size_t>(j)] -
-                                      p.theta_r * dz0, 0.0);
+                                      p.theta_r * dz0 -
+                                      sink[static_cast<std::size_t>(j)] * st.dt, 0.0);
         double out = 0.0;
         if (f[static_cast<std::size_t>(j)] < 0.0)
             out += -f[static_cast<std::size_t>(j)] * st.dt;      // upward out of j
@@ -225,8 +281,13 @@ void advanceColumn(const soil::Params& p, double* theta, int m, int stride,
         }
     }
 
-    // Positivity sharing may reduce the net top export; report actual ET.
-    st.et_taken=std::max(0.0,st.f_top-f[0]);
+    // The sinks were capped at each layer's water above residual before the
+    // faces were shared, so what they hold is the ET actually removed.
+    {
+        double taken = 0.0;
+        for (int j = 0; j < m; ++j) taken += sink[static_cast<std::size_t>(j)];
+        st.et_taken = taken;
+    }
 
     // ---- 6. Update w, then re-derive θ from the NEW geometry. This is where
     //         the layers compress: same water, new dz.
@@ -249,7 +310,8 @@ void advanceColumn(const soil::Params& p, double* theta, int m, int stride,
         w_new[static_cast<std::size_t>(j)] =
             w[static_cast<std::size_t>(j)] +
             st.dt * (f[static_cast<std::size_t>(j)] -
-                     f[static_cast<std::size_t>(j + 1)]);
+                     f[static_cast<std::size_t>(j + 1)] -
+                     sink[static_cast<std::size_t>(j)]);
     }
 
     const double w_max = p.theta_s * dz1;
