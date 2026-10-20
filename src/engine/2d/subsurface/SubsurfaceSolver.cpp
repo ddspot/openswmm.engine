@@ -1040,6 +1040,42 @@ void SubsurfaceSolver::setBedSeepageFloor(int node, double rate_1d) noexcept {
     bed_seep_floor_[static_cast<std::size_t>(b)] = std::max(0.0, rate_1d) * v12;
 }
 
+double SubsurfaceSolver::rootZoneTheta(int cell, double root_depth_m) const noexcept {
+    if (!state_.active || cell < 0 || cell >= state_.n_cells) return 0.0;
+    const auto u = static_cast<std::size_t>(cell);
+    const auto cl = static_cast<GwClosure>(state_.closure[u]);
+    const double L = std::max(state_.zs[u] - state_.hg[u], 0.0);
+    if (cl != GwClosure::SIGMA || state_.m_layers <= 0 || L <= kTiny)
+        return L > kTiny ? std::clamp(state_.hu[u] / L, state_.theta_r[u], state_.theta_s[u]) : state_.theta_s[u];
+    const int m = state_.m_layers;
+    const auto n = static_cast<std::size_t>(state_.n_cells);
+    const double dz = L / static_cast<double>(m);
+    if (!(root_depth_m > 0.0)) return state_.theta_sigma[u];
+    double wsum = 0.0, tsum = 0.0;
+    for (int j = 0; j < m; ++j) {
+        const double z_top = static_cast<double>(j) * dz;
+        if (z_top >= root_depth_m) break;
+        const double frac = std::clamp((root_depth_m - z_top) / dz, 0.0, 1.0);
+        tsum += frac * state_.theta_sigma[static_cast<std::size_t>(j) * n + u];
+        wsum += frac;
+    }
+    return wsum > 0.0 ? tsum / wsum : state_.theta_sigma[u];
+}
+
+double SubsurfaceSolver::drainageFieldCapacity(int cell, double drainage_m_per_s) const noexcept {
+    if (!state_.active || cell < 0 || cell >= state_.n_cells) return 0.0;
+    const auto u = static_cast<std::size_t>(cell);
+    const auto p = paramsOf(cell);
+    const double target = std::max(drainage_m_per_s, 0.0);
+    if (!(p.Ks > target)) return state_.theta_s[u];
+    double lo = 1.0e-6, hi = 1.0;
+    for (int it = 0; it < 80; ++it) {
+        const double mid = 0.5 * (lo + hi);
+        if (soil::conductivity(p, soil::suctionAtSaturation(p, mid)) > target) hi = mid; else lo = mid;
+    }
+    return state_.theta_r[u] + 0.5 * (lo + hi) * (state_.theta_s[u] - state_.theta_r[u]);
+}
+
 double SubsurfaceSolver::drawLidCapillary(int node, double demand_1d, double invert_1d,
                                           double reach_1d) noexcept {
     if (!state_.active || !(demand_1d > 0.0) || !(reach_1d > 0.0)) return 0.0;

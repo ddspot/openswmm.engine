@@ -50,6 +50,7 @@
 #define OPENSWMM_ENGINE_2D_SUBSURFACE_DATA_HPP
 
 #include <cstdint>
+#include <array>
 #include <string>
 #include <vector>
 #include "SurfaceOwnership.hpp"
@@ -351,9 +352,25 @@ struct GwUnitFactors {
 };
 
 /// Everything the parser fills, before resolution onto cells.
+/// One authored `[2D_VEGETATION]` row (fork `urbaneva/stage1-vegetat`, the
+/// vegetated mesh cell): UrbanEVA's law as the top boundary of the cell's
+/// aquifer column. `* LAImean Kc SL nFC LAIpattern Kcpattern [FC x] [WP x]
+/// [KS w sp su]`. SL in project rain-depth units (mm / in); FC / WP default
+/// to the column's drainage field capacity (K = 0.1 mm/day) and θ_r.
+struct GwVegetationRow {
+    int         scope = 0;      ///< 0 GLOBAL, 1 TAG, 2 CELL
+    std::string tag;
+    int         cell = -1;      ///< 0-based
+    double laimean = 2.0, kc = 1.0, sl = 0.29, nfc = 0.6;
+    std::string lai_pattern, kc_pattern;
+    double fc = -1.0, wp = -1.0;                       ///< < 0: derive from the column
+    std::array<double, 3> ks{1.0, 1.0, 1.0};           ///< seasonal evapfactors (winter, spring, summer)
+};
+
 struct SubsurfaceConfig {
     GwOptions                 options;
     std::vector<GwAquiferRow> rows;
+    std::vector<GwVegetationRow> vegetation;   ///< [2D_VEGETATION] (needs rows)
     std::vector<GwNodeBed>    node_beds;
     std::vector<GwLinkRow>    link_rows;   ///< G-X4: [2D_AQUIFER_LINKS]
     std::vector<SurfaceOwnerRecord> surface_owners; ///< Explicit SUBCATCH UNIFORM records; not aquifer activation.

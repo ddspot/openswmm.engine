@@ -1247,6 +1247,13 @@ void DefaultReportPlugin::write_results(std::FILE* f,
 
         std::fprintf(f, "\n  Continuity Error (%%) .....%14.3f",
                      mb2.error() * 100.0);
+        // Fork: the vegetated mesh cells' canopy — rain intercepted before the
+        // surface saw it, its evaporation and the store now. Outside the balance.
+        if (mb2.canopy_intercepted > 0.0 || mb2.canopy_storage > 0.0) {
+            row2("  (Canopy Interception) ..", mb2.canopy_intercepted);
+            row2("  (Canopy Evaporation) ...", mb2.canopy_evap_out);
+            row2("  (Canopy Stored, final) .", mb2.canopy_storage);
+        }
 
 #ifdef OPENSWMM_HAS_2D
         // G-O: the two-zone [2D_AQUIFER] ledger, the same terms the .h5

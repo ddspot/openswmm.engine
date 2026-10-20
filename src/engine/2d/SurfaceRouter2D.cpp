@@ -983,6 +983,12 @@ void SurfaceRouter2D::initialize(SimulationContext& ctx) {
             ctx.warnings);
         if (!aq_err.empty()) throw std::runtime_error(aq_err);
         marcher->setSubsurface(&subsurface_);
+        // Fork: [2D_VEGETATION] rows resolve against the aquifer's cells.
+        {
+            const std::string veg_err = vegetation_.initialize(mesh_, aquifer_cfg_, gwUnitFactors(ctx), ctx,
+                                                               subsurface_, ctx.warnings);
+            if (!veg_err.empty()) throw std::runtime_error(veg_err);
+        }
         // G-X1 (2026-09-19): the aquifer's node beds sample the 1D heads
         // through `state_.nodes_1d`, which only the orifice coupling used to
         // publish — a bed under a node with no [2D_VERTEX_NODE_MAP] entry
@@ -1538,9 +1544,11 @@ void SurfaceRouter2D::coAdvanceStep(SimulationContext& ctx, double dt,
     bool gage_changed = rain_gage_last_.size() != n_gages;
     for (std::size_t g = 0; !gage_changed && g < n_gages; ++g)
         gage_changed = rates[g] != rain_gage_last_[g];
+    bool forcing_refreshed = false;
     if (co_forcing_elapsed_ >= 30.0 || co_forcing_first_ ||
         state_.forcing_dirty || gage_changed) {
         state_.forcing_dirty = false;
+        forcing_refreshed = true;
         updateRainfall(ctx);
         // E2 [2D_OPTIONS] EVAPORATION: YES (default) = forcing only, the
         // pre-E2 sink; CLIMATE = unforced cells take the project
@@ -1566,6 +1574,17 @@ void SurfaceRouter2D::coAdvanceStep(SimulationContext& ctx, double dt,
         }
         co_forcing_elapsed_ = 0.0;
         co_forcing_first_ = false;
+    }
+    // Fork: vegetated mesh cells. On a refresh the law recomputes its demand
+    // (Ep, canopy, root-zone stress) and the gross rain is captured; every
+    // step the canopy intercepts from that gross rain before the marcher sees
+    // it and the demand stands in for the cell's evaporation rate.
+    if (vegetation_.active()) {
+        if (forcing_refreshed || rain_gross_.size() != state_.rainfall.size()) {
+            rain_gross_ = state_.rainfall;
+            vegetation_.refresh(ctx, subsurface_, state_, options_.evaporation != 0);
+        }
+        vegetation_.beforeAdvance(state_, rain_gross_, dt);
     }
 
     // Apply once per batch against the unforced base, never yesterday's
@@ -2637,6 +2656,13 @@ void SurfaceRouter2D::accumulateMassBalance(SimulationContext& ctx, double dt) {
     // Rainfall inflow (m³): rainfall is m/s after forcings are applied.
     if (common_stage_) mb.rainfall_in = common_stage_->meshRain();
     else mb.rainfall_in += rain_vol * dt;
+    // Fork: the canopy's own books (outside the surface balance).
+    if (vegetation_.active()) {
+        vegetation_.afterAdvance(dt);
+        mb.canopy_intercepted = vegetation_.interceptedVolume();
+        mb.canopy_evap_out = vegetation_.canopyEvapVolume();
+        mb.canopy_storage = vegetation_.canopyStorageVolume();
+    }
 
     // The CPU marcher records the applied evaporation after sharing the
     // cell's finite water budget. Re-evaluating at the final depth misses

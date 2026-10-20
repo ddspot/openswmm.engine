@@ -199,6 +199,60 @@ std::string parseAquiferOptionsLine(const std::vector<std::string>& tokens,
 }
 
 // ---------------------------------------------------------------------------
+// [2D_VEGETATION]  (fork: the vegetated mesh cell)
+// ---------------------------------------------------------------------------
+
+std::string parseVegetationLine(const std::vector<std::string>& tokens,
+                                std::vector<GwVegetationRow>& rows) {
+    GwVegetationRow r;
+    std::size_t at = 0;
+    if (tokens[0] == "*") { r.scope = 0; at = 1; }
+    else if (iequals(tokens[0], "TAG")) {
+        if (tokens.size() < 2) return "TAG needs a name";
+        r.scope = 1; r.tag = tokens[1]; at = 2;
+    } else if (iequals(tokens[0], "CELL")) {
+        int n = 0;
+        if (tokens.size() < 2 || !inum(tokens[1], n) || n < 1) return "CELL needs a 1-based index";
+        r.scope = 2; r.cell = n - 1; at = 2;
+    } else {
+        return "row must start with CELL, TAG or '*': " + tokens[0];
+    }
+    static const char* kPos[4] = {"LAIMEAN", "KC", "SL", "NFC"};
+    double* const dst[4] = {&r.laimean, &r.kc, &r.sl, &r.nfc};
+    for (int i = 0; i < 4; ++i) {
+        if (at >= tokens.size()) return std::string("missing ") + kPos[i];
+        if (!num(tokens[at], *dst[i])) return std::string("invalid ") + kPos[i] + ": " + tokens[at];
+        ++at;
+    }
+    if (at + 1 >= tokens.size()) return "missing LAIpattern and Kcpattern";
+    r.lai_pattern = tokens[at]; r.kc_pattern = tokens[at + 1]; at += 2;
+    while (at < tokens.size()) {
+        const std::string& k = tokens[at];
+        if (iequals(k, "KS")) {
+            if (at + 3 >= tokens.size()) return "KS needs three values (winter spring summer)";
+            for (int i = 0; i < 3; ++i)
+                if (!num(tokens[at + 1 + i], r.ks[static_cast<std::size_t>(i)]) || r.ks[static_cast<std::size_t>(i)] < 0.0)
+                    return "invalid KS value: " + tokens[at + 1 + i];
+            at += 4;
+            continue;
+        }
+        if (at + 1 >= tokens.size()) return "keyword " + k + " needs a value";
+        const std::string& v = tokens[at + 1];
+        at += 2;
+        if      (iequals(k, "FC")) { if (!num(v, r.fc) || !(r.fc > 0.0 && r.fc < 1.0)) return "FC must be in (0, 1): " + v; }
+        else if (iequals(k, "WP")) { if (!num(v, r.wp) || !(r.wp >= 0.0 && r.wp < 1.0)) return "WP must be in [0, 1): " + v; }
+        else return "unknown keyword: " + k;
+    }
+    if (!(r.laimean >= 0.0)) return "LAIMEAN must be >= 0";
+    if (!(r.kc > 0.0))       return "KC must be > 0";
+    if (!(r.sl >= 0.0))      return "SL must be >= 0";
+    if (!(r.nfc > 0.0 && r.nfc <= 1.0)) return "NFC must be in (0, 1]";
+    if (r.fc >= 0.0 && r.wp >= 0.0 && !(r.fc > r.wp)) return "FC must exceed WP";
+    rows.push_back(std::move(r));
+    return {};
+}
+
+// ---------------------------------------------------------------------------
 // [2D_AQUIFER]
 // ---------------------------------------------------------------------------
 
@@ -370,6 +424,12 @@ void registerSubsurfaceSections(SubsurfaceConfig& cfg,
             [&cfg, &node_names](const std::vector<std::string>& t) {
                 return parseAquiferNodeLine(t, cfg.node_beds, node_names);
             }, cfg.options));
+    registry.register_custom("2D_VEGETATION",[&cfg](SimulationContext& ctx,const std::vector<std::string>& lines){
+        for(const auto& raw:lines){const auto t=input::Tokenizer::tokenize(raw);if(t.empty())continue;
+            const auto error=parseVegetationLine(t,cfg.vegetation);
+            if(!error.empty()){ctx.error_code=5;ctx.error_message="[2D_VEGETATION] "+error;return;}
+        }
+    });
     registry.register_custom("2D_AQUIFER_LINKS",              // G-X4
         makeHandler("2D_AQUIFER_LINKS",
             [&cfg, &link_names](const std::vector<std::string>& t) {
@@ -832,6 +892,7 @@ SurfaceOwnershipPreview resolveSurfaceOwnership(const SimulationContext& ctx,con
     std::string aq;writeSubsurfaceSections(cfg,{}, {},aq,true);hashValue(aq);
     hashValue(cfg.options.wilting_suction);hashValue(cfg.options.c_gw);hashValue(cfg.options.c_col);hashValue(cfg.options.root_depth);
     for(const auto& r:cfg.rows){for(double v:{r.Ks,r.zs,r.theta_s,r.theta_r,r.alpha,r.psi_b,r.lambda,r.vg_n,r.vg_L,r.c_loss,r.hg0})hashValue(v);}
+    for(const auto& r:cfg.vegetation){hashValue(r.scope);hashValue(r.tag);hashValue(r.cell);for(double v:{r.laimean,r.kc,r.sl,r.nfc,r.fc,r.wp,r.ks[0],r.ks[1],r.ks[2]})hashValue(v);hashValue(r.lai_pattern);hashValue(r.kc_pattern);}
     for(const auto& r:cfg.surface_owners)hashValue(r.subcatch);
     for(std::size_t i=0;i<mesh.vx.size();++i){hashValue(mesh.vx[i]);hashValue(mesh.vy[i]);hashValue(mesh.vz[i]);}
     std::vector<Ring> cells(mesh.n_cells());
@@ -1040,6 +1101,31 @@ void writeSubsurfaceSections(const SubsurfaceConfig& cfg,
             while (!line.empty() && line.back() == ' ') line.pop_back();
             out += line;
             out += '\n';
+        }
+    }
+
+    if (!cfg.vegetation.empty()) {
+        out += "\n[2D_VEGETATION]\n";
+        out += ";;Scope           LAImean    Kc         SL         nFC        LAIpattern Kcpattern  Options\n";
+        for (const auto& r : cfg.vegetation) {
+            std::string line;
+            if      (r.scope == 0) line = "*";
+            else if (r.scope == 1) line = "TAG  " + r.tag;
+            else                   line = "CELL " + std::to_string(r.cell + 1);
+            line.append(std::max<int>(1, 18 - int(line.size())), ' ');
+            for (double v : {r.laimean, r.kc, r.sl, r.nfc}) {
+                const std::string sv = fmt(v);
+                line += sv;
+                line.append(std::max<int>(1, 11 - int(sv.size())), ' ');
+            }
+            line += r.lai_pattern; line.append(std::max<int>(1, 11 - int(r.lai_pattern.size())), ' ');
+            line += r.kc_pattern;  line.append(std::max<int>(1, 11 - int(r.kc_pattern.size())), ' ');
+            if (r.fc >= 0.0) { line += "FC " + fmt(r.fc) + " "; }
+            if (r.wp >= 0.0) { line += "WP " + fmt(r.wp) + " "; }
+            if (r.ks[0] != 1.0 || r.ks[1] != 1.0 || r.ks[2] != 1.0)
+                line += "KS " + fmt(r.ks[0]) + " " + fmt(r.ks[1]) + " " + fmt(r.ks[2]) + " ";
+            while (!line.empty() && line.back() == ' ') line.pop_back();
+            out += line; out += '\n';
         }
     }
 

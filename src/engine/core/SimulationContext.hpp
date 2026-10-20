@@ -1459,6 +1459,13 @@ struct SimulationContext {
         /// error grows by exactly the volume that came back up. Zero unless a
         /// `[2D_AQUIFER]` resolved.
         double aquifer_in            = 0.0;
+        /// Fork (vegetated mesh cells, [2D_VEGETATION]): rain the canopy took
+        /// before it reached the surface, what the canopy evaporated, and the
+        /// store at the end — reported, not in the surface balance (the surface
+        /// never received that water).
+        double canopy_intercepted    = 0.0;
+        double canopy_evap_out       = 0.0;
+        double canopy_storage        = 0.0;
         bool   active                = false;///< True if the 2D module ran
 
         // Cumulative marcher statistics (published by SurfaceRouter2D at

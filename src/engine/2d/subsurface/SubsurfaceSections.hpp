@@ -108,6 +108,10 @@ std::string parseAquiferOptionsLine(const std::vector<std::string>& tokens,
 std::string parseAquiferLine(const std::vector<std::string>& tokens,
                              std::vector<GwAquiferRow>& rows);
 
+/// One `[2D_VEGETATION]` line (fork: the vegetated mesh cell). Empty return = OK.
+std::string parseVegetationLine(const std::vector<std::string>& tokens,
+                                std::vector<GwVegetationRow>& rows);
+
 /// One `[2D_AQUIFER_NODE]` line. `node` is left as a NAME in @p names until
 /// `resolveSubsurface` maps it to an index. Empty return = OK.
 std::string parseAquiferNodeLine(const std::vector<std::string>& tokens,

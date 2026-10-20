@@ -363,6 +363,16 @@ public:
     /// G-O: the `[2D_AQUIFER_NODE]` beds as resolved (cell index filled),
     /// in the authored order — parallel to SurfaceRouter2D::aquiferNodeNames().
     const std::vector<GwNodeBed>& nodeBeds() const noexcept { return node_beds_; }
+    /// `[2D_AQUIFER_OPTIONS] ROOT_DEPTH` in metres (0 = top layer only).
+    double rootDepth() const noexcept { return options_.root_depth; }
+    /// Mean water content of the root zone of `cell`: the σ-layers within
+    /// `root_depth_m` of the ground (overlap-weighted; the top layer when
+    /// `root_depth_m` ≤ 0) under closure B, the bulk store under A / ENSLAVED.
+    double rootZoneTheta(int cell, double root_depth_m) const noexcept;
+    /// θ the cell's column drains to by gravity: the Se where Ks·K_r(Se) =
+    /// `drainage_m_per_s` (default 0.1 mm/day) — the "field capacity" a
+    /// gravity-only σ-column has, the number a vegetation law should use.
+    double drainageFieldCapacity(int cell, double drainage_m_per_s = 0.1e-3 / 86400.0) const noexcept;
     /// G-O: cumulative exchange per bed (m³, + out of the aquifer into the
     /// pipe) since the start — the results-file series behind the GUI's
     /// GwExchange plot. Never reset.

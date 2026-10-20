@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Caleb Buahin
 #include "LidNode.hpp"
+#include "VegetationLaw.hpp"
 #include "../core/SimulationContext.hpp"
 #include "../core/UnitConversion.hpp"
 #include "../core/DateTime.hpp"
@@ -46,27 +47,9 @@ const LidNodeVegetation* vegetation(const SimulationContext& ctx, int control) {
 }
 
 double monthlyPatternFactor(const SimulationContext& ctx, int idx, int month0) {
-    if (idx < 0 || idx >= ctx.patterns.count()) return 1.0;
-    const auto& f = ctx.patterns.factors[static_cast<std::size_t>(idx)];
-    if (ctx.patterns.types[static_cast<std::size_t>(idx)] != 0 || f.empty()) return 1.0;
-    return f[static_cast<std::size_t>(month0 % static_cast<int>(f.size()))];
+    return veglaw::monthlyPatternFactor(ctx.patterns, idx, month0);
 }
-
-// UrbanEVA's seasonal Ks: anchored at day 79 / 172 / 263 / 355 (winter,
-// spring, summer, winter) and interpolated linearly.
-double seasonalKs(const std::array<double, 3>& ks, int doy) {
-    static const int days[4] = {79, 172, 263, 355};
-    const double v[4] = {ks[0], ks[1], ks[2], ks[0]};
-    if (doy <= days[0] || doy >= days[3]) {
-        const double d0 = days[3] - 365.0, d1 = days[0];
-        const double x = doy <= days[0] ? doy : doy - 365.0;
-        return v[3] + (v[0] - v[3]) * (x - d0) / (d1 - d0);
-    }
-    for (int k = 0; k < 3; ++k)
-        if (doy >= days[k] && doy <= days[k + 1])
-            return v[k] + (v[k + 1] - v[k]) * (doy - days[k]) / double(days[k + 1] - days[k]);
-    return ks[0];
-}
+double seasonalKs(const std::array<double, 3>& ks, int doy) { return veglaw::seasonalKs(ks, doy); }
 int outletNode(const SimulationContext& ctx, int link) {
     if (link < 0 || link >= ctx.n_links()) return -1;
     int found = -1;

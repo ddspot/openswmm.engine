@@ -48,6 +48,7 @@
 #include "gw/GwTransportData.hpp"
 #include "quality/SurfaceQuality2D.hpp"   // S7
 #include "subsurface/SubsurfaceSolver.hpp"   // G1: the two-zone GW kernel
+#include "subsurface/MeshVegetation.hpp"   // fork: vegetated mesh cells
 #include "infil/Infil2D.hpp"
 #include "mesh/RainfallInterpolator.hpp"
 
@@ -557,6 +558,10 @@ private:
     /// state. Both are inert — no allocation, no per-step work — until a
     /// `[2D_AQUIFER]` row resolves.
     SubsurfaceConfig         aquifer_cfg_;
+    /// Fork: the vegetated mesh cells ([2D_VEGETATION]) and the gross rain the
+    /// canopy intercepts from (a copy of the refreshed per-cell rate).
+    MeshVegetation           vegetation_;
+    std::vector<double>      rain_gross_;
     std::vector<std::string> aquifer_node_names_;
     std::vector<std::string> aquifer_link_names_;   ///< G-X4
     SubsurfaceSolver         subsurface_;
