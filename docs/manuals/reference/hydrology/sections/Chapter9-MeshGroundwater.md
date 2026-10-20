@@ -281,6 +281,20 @@ root zone then behaves as one store drawn down together, as UrbanEVA's soil
 layer does; the reported stress is the availability-weighted mean. Default 0
 keeps the top-layer draw.
 
+**Vegetated mesh cells (same fork, `[2D_VEGETATION]`).** A row `scope LAImean Kc SL nFC
+LAIpattern Kcpattern [FC x] [WP x] [KS w sp su]` (scope `*` / `TAG` / `CELL` as the aquifer
+rows; `SL` in project rain-depth units) puts UrbanEVA's vegetation law on the cell's top
+boundary: a Braden canopy intercepts from the cell's rain before the surface sees it
+(`I = Smax·(1 − 1/(1 + SCF·P/Smax))` per hour, store `Smax·SCF`, `Smax = SL·LAI`,
+`SCF = 1 − 0.7^LAI`) and evaporates at `Ep·(S/Smax)^(2/3)·SCF`; the cell's evaporation
+demand becomes `Ep·[SCF·(1 − f) + (1 − SCF)·g]` with `Ep = E_pot·Ks(season)·Kc·Kc_pattern`,
+`f` the wet-canopy fraction and `g = sqrt(min(w/nFC, 1))` on the root zone's water content
+(`ROOT_DEPTH`), `w = (θ − WP)/(FC − WP)`. `FC` defaults to the column's drainage field
+capacity (the θ where `Ks·K_r = 0.1 mm/day`), `WP` to θ_r. The marcher then pays ponded
+evaporation from that demand and the column takes the rest (§9.8) — nothing downstream
+changes. The canopy's interception, evaporation and store are printed beside the 2D surface
+continuity block, outside its balance. Needs a `[2D_AQUIFER]` under the cells.
+
 **Capillary rise across the table (same fork).** Under `GW_ET CAPILLARY_RISE` or
 `BOTH` the bottom face carries the full Darcy flux between the table (\f$\psi = 0\f$)
 and the bottom layer's centre, \f$dz/2\f$ above it, downward positive:
