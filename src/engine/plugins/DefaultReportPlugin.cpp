@@ -1262,7 +1262,7 @@ void DefaultReportPlugin::write_results(std::FILE* f,
         // enter the aquifer ledger as Irrigation Inflow, not the surface).
         if (mb2.irrigation_in > 0.0) {
             row2("  (Cell Irrigation In) ...", mb2.irrigation_in);
-            std::fprintf(f, "\n  %s%14ld", "  (Cell Irrigation Doses) ", mb2.irrigation_events);
+            std::fprintf(f, "\n  %s%14ld", "  (Cell Irrigation Doses) .", mb2.irrigation_events);
         }
 
 #ifdef OPENSWMM_HAS_2D
