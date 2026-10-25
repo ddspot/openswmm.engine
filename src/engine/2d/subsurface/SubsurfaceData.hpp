@@ -227,6 +227,11 @@ struct GwAquiferRow {
     GwClosure closure   = GwClosure::AUTO;
     int       m_layers  = -1;   ///< < 0 ⇒ the global M_LAYERS
     bool      soil_char_set = false, closure_set = false;
+    /// Fork: `BOUNDARY_ET NO` — the column under these cells takes no
+    /// evaporative demand from the surface (a sealed surface: the pond on it
+    /// still evaporates at the cell's rate, the soil beneath does not).
+    /// −1 inherit (yes), 0 no, 1 yes.
+    int       boundary_et = -1;
 };
 
 /**
@@ -302,6 +307,8 @@ struct SubsurfaceState {
     std::vector<double>  iacc;
     /// Fork (THIN_COLUMN): 1 while the cell's σ column is collapsed to the hydrostatic closure.
     std::vector<int8_t>  thin;
+    /// Fork (`BOUNDARY_ET NO` on the aquifer row): 1 = the column takes no surface ET demand.
+    std::vector<int8_t>  no_boundary_et;
 
     // ---- ledger (m³, cumulative) ----------------------------------------
     double led_recharge = 0.0;   ///< unsat → sat (negative = capillary rise)

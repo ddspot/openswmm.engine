@@ -319,6 +319,14 @@ flux it carries is already bounded by the positivity share, so a step that is fo
 for it oscillates within the layer's own store and conserves; the floor caps the cost, not the
 mass.
 
+**Sealed surfaces (same fork, `BOUNDARY_ET NO` on a `[2D_AQUIFER]` row).** A roof or pavement cell
+is `[2D_INFILTRATION] <cell> NONE` for its water, but under `GW_ET BOUNDARY_ET / BOTH` the column
+beneath it would still meet the cell's evaporative demand as if the surface were open soil (on a
+Halle block fully disconnected, 237 mm/a of ET from under the pavement). `BOUNDARY_ET NO` on the
+aquifer row for those cells drops the column's share of the demand: the pond on the sealed surface
+evaporates at the cell's rate through the surface sink, the soil beneath does not. The unmet share is
+counted in the cell's unused-ET diagnostic.
+
 **Thin columns go hydrostatic (same fork, `THIN_COLUMN <len>`).** A closure-B column whose
 unsaturated zone is thinner than the threshold is advanced as `ENSLAVED` until it grows back past
 twice the threshold. With the table a few decimetres below the ground the σ layers are centimetres

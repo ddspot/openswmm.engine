@@ -344,6 +344,10 @@ std::string parseAquiferLine(const std::vector<std::string>& tokens,
         } else if (iequals(k, "M_LAYERS")) {
             if (!inum(v, r.m_layers) || r.m_layers < 2 || r.m_layers > 128)
                 return "M_LAYERS must be 2..128: " + v;
+        } else if (iequals(k, "BOUNDARY_ET")) {                 // fork: sealed surfaces
+            if (iequals(v, "NO")) r.boundary_et = 0;
+            else if (iequals(v, "YES")) r.boundary_et = 1;
+            else return "BOUNDARY_ET must be YES or NO: " + v;
         } else {
             return "unknown keyword: " + k;
         }
@@ -935,7 +939,7 @@ SurfaceOwnershipPreview resolveSurfaceOwnership(const SimulationContext& ctx,con
     hashValue(ctx.options.water_age);hashValue(ctx.options.heat_transport);hashValue(opts.transport_msx);
     std::string aq;writeSubsurfaceSections(cfg,{}, {},aq,true);hashValue(aq);
     hashValue(cfg.options.wilting_suction);hashValue(cfg.options.c_gw);hashValue(cfg.options.c_col);hashValue(cfg.options.root_depth);hashValue(cfg.options.thin_column);
-    for(const auto& r:cfg.rows){for(double v:{r.Ks,r.zs,r.theta_s,r.theta_r,r.alpha,r.psi_b,r.lambda,r.vg_n,r.vg_L,r.c_loss,r.hg0})hashValue(v);}
+    for(const auto& r:cfg.rows){for(double v:{r.Ks,r.zs,r.theta_s,r.theta_r,r.alpha,r.psi_b,r.lambda,r.vg_n,r.vg_L,r.c_loss,r.hg0})hashValue(v);hashValue(r.boundary_et);}
     for(const auto& r:cfg.vegetation){hashValue(r.scope);hashValue(r.tag);hashValue(r.cell);for(double v:{r.laimean,r.kc,r.sl,r.nfc,r.fc,r.wp,r.ks[0],r.ks[1],r.ks[2]})hashValue(v);hashValue(r.lai_pattern);hashValue(r.kc_pattern);}
     for(const auto& r:cfg.irrigation){hashValue(r.scope);hashValue(r.tag);hashValue(r.cell);hashValue(r.depletion);hashValue(r.coeff);hashValue(r.pattern);hashValue(r.source);hashValue(r.hour);}
     for(const auto& r:cfg.surface_owners)hashValue(r.subcatch);
@@ -1144,6 +1148,8 @@ void writeSubsurfaceSections(const SubsurfaceConfig& cfg,
             if (r.soil_char_set) opt("SOIL_CHAR", soilCharToken(r.soil_char));
             if (r.closure_set)   opt("CLOSURE",   gwClosureToken(r.closure));
             if (r.m_layers > 0)  opt("M_LAYERS",  std::to_string(r.m_layers));
+            if (r.boundary_et == 0) opt("BOUNDARY_ET", "NO");
+            else if (r.boundary_et == 1) opt("BOUNDARY_ET", "YES");
             while (!line.empty() && line.back() == ' ') line.pop_back();
             out += line;
             out += '\n';

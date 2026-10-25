@@ -185,6 +185,7 @@ void SubsurfaceSolver::resolveRows(const MeshData& mesh,
                     r.closure_set ? r.closure : options_.closure);
                 if (r.hg0 >= 0.0)
                     state_.hg[u] = std::min(r.hg0 * uf.length, state_.zs[u]);
+                if (r.boundary_et >= 0) state_.no_boundary_et[u] = r.boundary_et == 0 ? 1 : 0;   // fork
             }
         }
     }
@@ -1536,7 +1537,7 @@ void SubsurfaceSolver::fireCell(int i, double dt, SurfaceStateData& surf, double
     state_.qplus_last[u] = q_in;
 
     // Surface-cadence demand has already paid actual surface evaporation.
-    const bool et_boundary=(options_.gw_et=="BOUNDARY_ET"||options_.gw_et=="BOTH");
+    const bool et_boundary=(options_.gw_et=="BOUNDARY_ET"||options_.gw_et=="BOTH") && !state_.no_boundary_et[u];   // fork: BOUNDARY_ET NO per cell
     const bool et_caprise=(options_.gw_et=="CAPILLARY_RISE"||options_.gw_et=="BOTH");
     const double budget=options_.per_subcatch?std::max(0.0,surf.evap_rate[u])*A*dt:consumePending(state_.et_pending[u]);
     double q_et=et_boundary?budget/(A*dt):0.0;

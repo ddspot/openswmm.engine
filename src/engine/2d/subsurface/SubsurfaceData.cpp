@@ -84,6 +84,7 @@ void SubsurfaceState::resize(int n, int m) {
     lacc.assign(nn, 0.0);         // G-X3
     iacc.assign(nn, 0.0);         // fork: [2D_IRRIGATION]
     thin.assign(nn, 0);           // fork: THIN_COLUMN
+    no_boundary_et.assign(nn, 0); // fork: BOUNDARY_ET NO
     // eacc_L/R and nacc are sized by the solver against the edge and node
     // counts, which this struct deliberately does not know.
 }
