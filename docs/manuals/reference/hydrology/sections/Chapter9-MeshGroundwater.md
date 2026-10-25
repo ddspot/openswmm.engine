@@ -295,6 +295,21 @@ evaporation from that demand and the column takes the rest (§9.8) — nothing d
 changes. The canopy's interception, evaporation and store are printed beside the 2D surface
 continuity block, outside its balance. Needs a `[2D_AQUIFER]` under the cells.
 
+**Irrigation on vegetated cells (same fork, `[2D_IRRIGATION]`).** A row `scope DepletionFact
+IrrigationCoeff Pattern SourceNode [TriggerHour]` puts UrbanEVA's irrigation rule on the cells
+in scope (they must carry a `[2D_VEGETATION]` row: its FC / WP set the trigger; a `*` or `TAG`
+row skips unvegetated cells with a warning, a `CELL` row on one is an error). Once a day at the
+trigger hour, if the root-zone water content (`ROOT_DEPTH`, else the top layer) is below
+`WP + d·(FC − WP)` and the MONTHLY pattern is > 0, the dose
+`(c·FC − θ_thr) · root-zone thickness · area · pattern` leaves the `[STORAGE]` source node
+(the 1D ledger books it as "Irrigation to 2D Cells", an outflow in the routing continuity) and
+is delivered to the top of the cell's column at its next firing, on the infiltration path
+(what the top layer will not take is rejected to the surface). The aquifer ledger prints it as
+"Irrigation Inflow" (`SWMM_GW2D_LED_IRRIGATION`, HDF5 `irrigation_in`); the 2D surface block
+lists the delivered volume and the dose count beside the canopy rows. The source may be a tank
+or a storage node exchanging with the aquifer (`[2D_AQUIFER_NODE]`): groundwater-sourced
+irrigation then closes through the node exchange.
+
 **A thickness floor in the column's step limit (same fork).** The explicit column's bound
 (`columnDtLimit`: `dz/c`, `dz/|σL̇|`, `dz²/2D`) is taken over `max(dz, 2 cm)`. When the table
 rises to within centimetres of the ground the σ layers thin to nothing and the bound would drive
