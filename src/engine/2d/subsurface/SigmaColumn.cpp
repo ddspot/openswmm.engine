@@ -36,6 +36,7 @@ namespace {
 
 constexpr double kLMin  = 1.0e-3;   ///< column thickness floor (m)
 constexpr double kTiny  = 1.0e-300;
+constexpr double kDzFloor = 0.02;   ///< m — see columnDtLimit
 
 inline double& at(double* t, int j, int stride) noexcept {
     return t[static_cast<std::size_t>(j) * static_cast<std::size_t>(stride)];
@@ -79,7 +80,17 @@ double columnDtLimit(const soil::Params& p, const double* theta, int m,
                      bool capillary) noexcept {
     const double Lc = std::max(L, kLMin);
     const double dsig = 1.0 / static_cast<double>(m);
-    const double dz = Lc * dsig;
+    // Fork (2026-10-25): a thickness floor on the layer the limit is taken
+    // over. When the table rises to within centimetres of the ground the σ
+    // layers thin to nothing, dz/c and dz²/2D collapse, and the whole 2D
+    // ladder follows the column down to sub-second steps — a shallow-
+    // groundwater block whose root zone spans the column sat at 100 % CPU for
+    // an hour without finishing (Halle Phase 4, two of twenty blocks). Below
+    // kDzFloor the column holds less than a centimetre of water per layer;
+    // every flux it carries is already bounded by the positivity share, so a
+    // step that is formally too long for such a layer oscillates within the
+    // layer's own store and conserves. The floor caps the cost, not the mass.
+    const double dz = std::max(Lc * dsig, kDzFloor);
     double lim = 1.0e30;
     for (int j = 0; j < m; ++j) {
         const double th = std::clamp(at(theta, j, stride), p.theta_r, p.theta_s);
