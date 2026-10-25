@@ -295,6 +295,15 @@ evaporation from that demand and the column takes the rest (§9.8) — nothing d
 changes. The canopy's interception, evaporation and store are printed beside the 2D surface
 continuity block, outside its balance. Needs a `[2D_AQUIFER]` under the cells.
 
+**A thickness floor in the column's step limit (same fork).** The explicit column's bound
+(`columnDtLimit`: `dz/c`, `dz/|σL̇|`, `dz²/2D`) is taken over `max(dz, 2 cm)`. When the table
+rises to within centimetres of the ground the σ layers thin to nothing and the bound would drive
+the whole 2D ladder to sub-second steps (a shallow-groundwater block whose root zone spanned the
+column never finished). Below the floor a layer holds less than a centimetre of water and every
+flux it carries is already bounded by the positivity share, so a step that is formally too long
+for it oscillates within the layer's own store and conserves; the floor caps the cost, not the
+mass.
+
 **Capillary rise across the table (same fork).** Under `GW_ET CAPILLARY_RISE` or
 `BOTH` the bottom face carries the full Darcy flux between the table (\f$\psi = 0\f$)
 and the bottom layer's centre, \f$dz/2\f$ above it, downward positive:
