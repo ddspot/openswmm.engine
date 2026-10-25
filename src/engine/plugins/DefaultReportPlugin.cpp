@@ -1176,6 +1176,10 @@ void DefaultReportPlugin::write_results(std::FILE* f,
             row("2D Coupling Outflow ......", rr[7]);
         row("Evaporation Loss .........", rr[9]);
         row("Exfiltration Loss ........", rr[10]);
+        // Fork ([2D_IRRIGATION]): storage-node water sent to vegetated mesh
+        // cells; the exact ledger (no half-step split), printed when non-zero.
+        if (mb.routing_irrigation_out != 0.0)
+            row("Irrigation to 2D Cells ...", mb.routing_irrigation_out);
         row("Initial Stored Volume ....", mb.routing_init_storage);
         row("Final Stored Volume ......", mb.routing_final_storage);
 
@@ -1193,7 +1197,7 @@ void DefaultReportPlugin::write_results(std::FILE* f,
         // under 1 ft3 reads 0 (TINY).
         {
             double tin  = mb.routing_init_storage + rr[1] + rr[4] + rr[3];
-            double tout = mb.routing_final_storage + rr[6] + rr[7] + rr[9] + rr[10];
+            double tout = mb.routing_final_storage + rr[6] + rr[7] + rr[9] + rr[10] + mb.routing_irrigation_out;
             if (rr[0] >= 0.0) tin += rr[0]; else tout -= rr[0];
             if (rr[2] >= 0.0) tin += rr[2]; else tout -= rr[2];
             if (rr[5] >= 0.0) tin += rr[5]; else tout -= rr[5];
@@ -1254,6 +1258,12 @@ void DefaultReportPlugin::write_results(std::FILE* f,
             row2("  (Canopy Evaporation) ...", mb2.canopy_evap_out);
             row2("  (Canopy Stored, final) .", mb2.canopy_storage);
         }
+        // Fork ([2D_IRRIGATION]): doses delivered to the cells' columns (they
+        // enter the aquifer ledger as Irrigation Inflow, not the surface).
+        if (mb2.irrigation_in > 0.0) {
+            row2("  (Cell Irrigation In) ...", mb2.irrigation_in);
+            std::fprintf(f, "\n  %s%14ld", "  (Cell Irrigation Doses) ", mb2.irrigation_events);
+        }
 
 #ifdef OPENSWMM_HAS_2D
         // G-O: the two-zone [2D_AQUIFER] ledger, the same terms the .h5
@@ -1270,6 +1280,7 @@ void DefaultReportPlugin::write_results(std::FILE* f,
             row2("Initial Stored Volume ....", g.led_init_storage);
             row2("Infiltration Inflow ......", g.led_infil_in);
             row2("Conduit Seepage Inflow ...", g.led_link);   // G-X3
+            if (g.led_irrigation != 0.0) row2("Irrigation Inflow ........", g.led_irrigation);   // fork
             if (g.led_source_in != 0.0) row2("Named Source Injection ...", g.led_source_in);
             if (g.led_source_out != 0.0) row2("Named Source Extraction ..", g.led_source_out);
             row2("Lateral Net Inflow .......", g.led_lateral);
@@ -1288,7 +1299,7 @@ void DefaultReportPlugin::write_results(std::FILE* f,
             row2("Final Stored Volume ......", g.liveStorage());
             row2("  (Recharge, internal) ...", g.led_recharge);
             row2("  (Capillary Rise, int.) .", g.led_caprise);
-            const double denom = g.led_init_storage + g.led_infil_in + g.led_link + g.led_source_in +   // G-X3
+            const double denom = g.led_init_storage + g.led_infil_in + g.led_link + g.led_source_in + g.led_irrigation +   // G-X3, fork
                                  std::max(0.0, g.led_lateral);
             std::fprintf(f, "\n  Continuity Error (%%) .....%14.3f",
                          (denom > 0.0) ? g.continuityResidual() / denom * 100.0 : 0.0);

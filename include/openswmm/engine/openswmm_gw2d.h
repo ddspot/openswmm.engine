@@ -128,6 +128,7 @@ extern "C" {
 #define SWMM_GW2D_LED_SOURCE_IN     11  /**< Named source injection, m3. */
 #define SWMM_GW2D_LED_SOURCE_OUT    12  /**< Actual availability-limited extraction, m3. */
 #define SWMM_GW2D_LED_LINK          10  /**< G-X3: conduit seepage delivered in */
+#define SWMM_GW2D_LED_IRRIGATION    14  /**< [2D_IRRIGATION] delivered in from 1D storage nodes, m3 */
 
 /* ---- T7.5: the transported tuple (read-only results) --------------------- */
 

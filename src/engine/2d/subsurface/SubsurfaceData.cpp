@@ -82,6 +82,7 @@ void SubsurfaceState::resize(int n, int m) {
     xacc_from_surface.assign(nn, 0.0);
     xacc_to_surface.assign(nn, 0.0);
     lacc.assign(nn, 0.0);         // G-X3
+    iacc.assign(nn, 0.0);         // fork: [2D_IRRIGATION]
     // eacc_L/R and nacc are sized by the solver against the edge and node
     // counts, which this struct deliberately does not know.
 }
@@ -119,6 +120,7 @@ double SubsurfaceState::liveStorage() const noexcept {
     for (double v : xacc_from_surface) s += v;
     for (double v : xacc_to_surface)   s += v;
     for (double v : lacc)              s += v;   // G-X3: seepage in flight
+    for (double v : iacc)              s += v;   // fork: irrigation in flight
     return s;
 }
 
@@ -130,7 +132,7 @@ double SubsurfaceState::ledgeredStorage() const noexcept {
 }
 
 double SubsurfaceState::continuityResidual() const noexcept {
-    const double in  = led_infil_in + led_lateral + led_link + led_source_in;   // G-X3
+    const double in  = led_infil_in + led_lateral + led_link + led_source_in + led_irrigation;   // G-X3, fork irrigation
     const double out = led_deep + led_node + led_et + led_dunne + led_reject + led_source_out;
     return ledgeredStorage() - led_init_storage - (in - out);
 }

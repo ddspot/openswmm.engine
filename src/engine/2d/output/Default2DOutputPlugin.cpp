@@ -1264,6 +1264,7 @@ int Default2DOutputPlugin::finalize(const SimulationContext& ctx) {
             writeScalar(grp, "source_in",     g.led_source_in);
             writeScalar(grp, "source_out",    g.led_source_out);
             writeScalar(grp, "link_in",       g.led_link);   // G-X3: conduit seepage
+            writeScalar(grp, "irrigation_in", g.led_irrigation);   // fork: [2D_IRRIGATION]
             writeScalar(grp, "lateral_in",    g.led_lateral);
             writeScalar(grp, "recharge",      g.led_recharge);
             writeScalar(grp, "capillary_rise", g.led_caprise);

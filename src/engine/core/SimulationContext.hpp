@@ -1164,6 +1164,10 @@ struct SimulationContext {
         double routing_outflow       = 0.0;
         double routing_evap_loss     = 0.0;
         double routing_seep_loss     = 0.0;
+        /// Fork ([2D_IRRIGATION]): water drawn from [STORAGE] nodes as irrigation
+        /// for vegetated mesh cells (ft³) — an outflow of the 1D system that
+        /// the 2D aquifer books arriving as `led_irrigation`.
+        double routing_irrigation_out = 0.0;
         double routing_init_storage  = 0.0;
         double routing_final_storage = 0.0;
 
@@ -1367,6 +1371,7 @@ struct SimulationContext {
             double total_out = routing_flooding + routing_coupling_out +
                                routing_outflow +
                                routing_evap_loss + routing_seep_loss +
+                               routing_irrigation_out +
                                routing_final_storage;
             return (total_in > 0.0) ? (total_in - total_out) / total_in : 0.0;
         }
@@ -1466,6 +1471,11 @@ struct SimulationContext {
         double canopy_intercepted    = 0.0;
         double canopy_evap_out       = 0.0;
         double canopy_storage        = 0.0;
+        /// Fork ([2D_IRRIGATION]): irrigation delivered to vegetated cells
+        /// (m³, cumulative; it enters the aquifer column, not the surface) and
+        /// the number of doses.
+        double irrigation_in         = 0.0;
+        long   irrigation_events     = 0;
         bool   active                = false;///< True if the 2D module ran
 
         // Cumulative marcher statistics (published by SurfaceRouter2D at

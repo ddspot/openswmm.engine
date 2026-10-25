@@ -97,7 +97,7 @@ std::unique_ptr<WaterDriver::PreparedRestore> prepareDriver(const WaterDriver& d
     X(runoff_rainfall) X(runoff_runon) X(runoff_evap) X(runoff_infil) X(runoff_runoff) X(runoff_lid_drain) \
     X(runoff_snowremov) X(runoff_init_store) X(runoff_final_store) X(runoff_init_snow) X(runoff_final_snow) X(routing_dry_weather) \
     X(routing_wet_weather) X(routing_gw_inflow) X(routing_link_gw_inflow) X(routing_rdii) X(routing_external) X(routing_flooding) \
-    X(routing_coupling_out) X(routing_outflow) X(routing_evap_loss) X(routing_seep_loss) X(routing_init_storage) X(routing_final_storage) \
+    X(routing_coupling_out) X(routing_outflow) X(routing_evap_loss) X(routing_seep_loss) X(routing_irrigation_out) X(routing_init_storage) X(routing_final_storage) \
     X(routing_forcing_inflow) X(routing_forcing_qual_inflow) X(gw_infil) X(gw_upper_evap) X(gw_lower_evap) X(gw_lower_perc) \
     X(gw_lateral_flow) X(gw_init_storage) X(gw_final_storage) X(gw_infil_2d_recharge) X(step_flooding) X(step_outflow) \
     X(step_dw_inflow) X(step_gw_inflow) X(step_rdii_inflow) X(step_ext_inflow) X(last_step_flow_error) X(step_ext_withdrawal) \

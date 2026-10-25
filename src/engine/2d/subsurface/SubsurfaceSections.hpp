@@ -111,6 +111,10 @@ std::string parseAquiferLine(const std::vector<std::string>& tokens,
 /// One `[2D_VEGETATION]` line (fork: the vegetated mesh cell). Empty return = OK.
 std::string parseVegetationLine(const std::vector<std::string>& tokens,
                                 std::vector<GwVegetationRow>& rows);
+/// Fork: one `[2D_IRRIGATION]` row, `scope DepletionFact IrrigationCoeff
+/// Pattern SourceNode [TriggerHour]`. Empty return = OK.
+std::string parseIrrigationLine(const std::vector<std::string>& tokens,
+                                std::vector<GwIrrigationRow>& rows);
 
 /// One `[2D_AQUIFER_NODE]` line. `node` is left as a NAME in @p names until
 /// `resolveSubsurface` maps it to an index. Empty return = OK.

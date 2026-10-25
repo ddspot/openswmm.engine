@@ -48,9 +48,18 @@ public:
     /// After the advance: the canopy evaporates Ep · f · SCF over `dt`.
     void afterAdvance(double dt);
 
+    /// `[2D_IRRIGATION]`: once a day at each cell's trigger hour, if the
+    /// root-zone θ is below `WP + d·(FC − WP)` and the MONTHLY pattern > 0,
+    /// draw `(c·FC − θ_thr) · root-zone thickness · area · pattern` from the
+    /// source storage node (1D books `routing_irrigation_out`) and hand it to
+    /// the column (`SubsurfaceSolver::bookIrrigation`). Routing cadence.
+    void irrigate(SimulationContext& ctx, SubsurfaceSolver& gw);
+
     double interceptedVolume() const noexcept { return intercepted_m3_; }   ///< cumulative, m³
     double canopyEvapVolume() const noexcept { return canopy_evap_m3_; }    ///< cumulative, m³
     double canopyStorageVolume() const noexcept;                            ///< now, m³
+    double irrigationVolume() const noexcept { return irrigated_m3_; }      ///< cumulative, m³
+    long irrigationEvents() const noexcept { return irrigation_events_; }  ///< doses delivered
 
 private:
     bool active_ = false;
@@ -61,6 +70,14 @@ private:
     // state
     std::vector<double> canopy_m_, smax_m_, scf_, ep_, demand_, stress_, wet_;
     double intercepted_m3_ = 0.0, canopy_evap_m3_ = 0.0;
+    // irrigation ([2D_IRRIGATION]), per cell
+    bool irr_active_ = false;
+    std::vector<int8_t> irr_on_;
+    std::vector<double> irr_d_, irr_c_;
+    std::vector<int> irr_pat_, irr_src_, irr_hour_;
+    std::vector<long> irr_last_day_;
+    double irrigated_m3_ = 0.0;
+    long irrigation_events_ = 0;
 };
 
 }  // namespace openswmm::twoD

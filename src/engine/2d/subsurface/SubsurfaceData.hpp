@@ -281,6 +281,10 @@ struct SubsurfaceState {
     /// rates and gathered at the GW cell's firing — the `xacc_from_surface`
     /// pattern, one phase behind `led_link` for the same reason.
     std::vector<double>  lacc;
+    /// Fork ([2D_IRRIGATION]): irrigation delivered to the cell since its last
+    /// firing (m³), the `lacc` pattern — booked by MeshVegetation at the
+    /// routing cadence, gathered at the cell's firing into the top inflow.
+    std::vector<double>  iacc;
 
     // ---- ledger (m³, cumulative) ----------------------------------------
     double led_recharge = 0.0;   ///< unsat → sat (negative = capillary rise)
@@ -300,6 +304,7 @@ struct SubsurfaceState {
     double led_darcy_req = 0.0, led_darcy_booked = 0.0;
     double led_infil_in = 0.0;   ///< q⁺ delivered from the surface
     double led_link     = 0.0;   ///< G-X3: conduit seepage delivered in
+    double led_irrigation = 0.0; ///< fork: [2D_IRRIGATION] delivered in (from 1D storage nodes)
     /// Diagnostic split of `led_infil_in`: the share booked from 1D
     /// subcatchments without a lumped aquifer, counted at delivery (not a
     /// second inflow — continuityResidual does not use it).
@@ -367,10 +372,29 @@ struct GwVegetationRow {
     std::array<double, 3> ks{1.0, 1.0, 1.0};           ///< seasonal evapfactors (winter, spring, summer)
 };
 
+/// One authored `[2D_IRRIGATION]` row (fork, the vegetated mesh cell's
+/// UrbanEVA irrigation): `scope DepletionFact IrrigationCoeff Pattern
+/// SourceNode [TriggerHour]`. Once a day at the trigger hour, if the root-zone
+/// water content is below `WP + d·(FC − WP)` and the MONTHLY pattern is > 0,
+/// a dose `(c·FC − θ_thr) · root-zone thickness · area · pattern` is drawn
+/// from the [STORAGE] source node and delivered to the top of the cell's
+/// column. The cell must carry a `[2D_VEGETATION]` row (its FC / WP).
+struct GwIrrigationRow {
+    int         scope = 0;      ///< 0 GLOBAL, 1 TAG, 2 CELL
+    std::string tag;
+    int         cell = -1;      ///< 0-based
+    double depletion = 0.5;     ///< trigger: fraction of plant-available water drawn down
+    double coeff = 0.9;         ///< target: fraction of field capacity to refill to
+    std::string pattern;        ///< [PATTERNS] MONTHLY name
+    std::string source;         ///< [STORAGE] node supplying the water
+    int hour = 0;               ///< local hour of the daily check (0-23)
+};
+
 struct SubsurfaceConfig {
     GwOptions                 options;
     std::vector<GwAquiferRow> rows;
     std::vector<GwVegetationRow> vegetation;   ///< [2D_VEGETATION] (needs rows)
+    std::vector<GwIrrigationRow> irrigation;   ///< [2D_IRRIGATION] (needs vegetation)
     std::vector<GwNodeBed>    node_beds;
     std::vector<GwLinkRow>    link_rows;   ///< G-X4: [2D_AQUIFER_LINKS]
     std::vector<SurfaceOwnerRecord> surface_owners; ///< Explicit SUBCATCH UNIFORM records; not aquifer activation.

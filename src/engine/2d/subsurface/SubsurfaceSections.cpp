@@ -199,6 +199,38 @@ std::string parseAquiferOptionsLine(const std::vector<std::string>& tokens,
 }
 
 // ---------------------------------------------------------------------------
+// [2D_IRRIGATION]  (fork: UrbanEVA irrigation on the vegetated mesh cell)
+// ---------------------------------------------------------------------------
+
+std::string parseIrrigationLine(const std::vector<std::string>& tokens,
+                                std::vector<GwIrrigationRow>& rows) {
+    GwIrrigationRow r;
+    std::size_t at = 0;
+    if (tokens[0] == "*") { r.scope = 0; at = 1; }
+    else if (iequals(tokens[0], "TAG")) {
+        if (tokens.size() < 2) return "TAG needs a name";
+        r.scope = 1; r.tag = tokens[1]; at = 2;
+    } else if (iequals(tokens[0], "CELL")) {
+        int n = 0;
+        if (tokens.size() < 2 || !inum(tokens[1], n) || n < 1) return "CELL needs a 1-based index";
+        r.scope = 2; r.cell = n - 1; at = 2;
+    } else {
+        return "row must start with CELL, TAG or '*': " + tokens[0];
+    }
+    if (at + 3 >= tokens.size()) return "needs DepletionFact IrrigationCoeff Pattern SourceNode [TriggerHour]";
+    if (!num(tokens[at], r.depletion) || r.depletion < 0.0 || r.depletion > 1.0) return "invalid DepletionFact (0-1): " + tokens[at];
+    if (!num(tokens[at + 1], r.coeff) || r.coeff <= 0.0 || r.coeff > 1.0) return "invalid IrrigationCoeff (0-1]: " + tokens[at + 1];
+    r.pattern = tokens[at + 2]; r.source = tokens[at + 3]; at += 4;
+    if (at < tokens.size()) {
+        if (!inum(tokens[at], r.hour) || r.hour < 0 || r.hour > 23) return "invalid TriggerHour (0-23): " + tokens[at];
+        ++at;
+    }
+    if (at < tokens.size()) return "unexpected token: " + tokens[at];
+    rows.push_back(r);
+    return {};
+}
+
+// ---------------------------------------------------------------------------
 // [2D_VEGETATION]  (fork: the vegetated mesh cell)
 // ---------------------------------------------------------------------------
 
@@ -428,6 +460,12 @@ void registerSubsurfaceSections(SubsurfaceConfig& cfg,
         for(const auto& raw:lines){const auto t=input::Tokenizer::tokenize(raw);if(t.empty())continue;
             const auto error=parseVegetationLine(t,cfg.vegetation);
             if(!error.empty()){ctx.error_code=5;ctx.error_message="[2D_VEGETATION] "+error;return;}
+        }
+    });
+    registry.register_custom("2D_IRRIGATION",[&cfg](SimulationContext& ctx,const std::vector<std::string>& lines){
+        for(const auto& raw:lines){const auto t=input::Tokenizer::tokenize(raw);if(t.empty())continue;
+            const auto error=parseIrrigationLine(t,cfg.irrigation);
+            if(!error.empty()){ctx.error_code=5;ctx.error_message="[2D_IRRIGATION] "+error;return;}
         }
     });
     registry.register_custom("2D_AQUIFER_LINKS",              // G-X4
@@ -893,6 +931,7 @@ SurfaceOwnershipPreview resolveSurfaceOwnership(const SimulationContext& ctx,con
     hashValue(cfg.options.wilting_suction);hashValue(cfg.options.c_gw);hashValue(cfg.options.c_col);hashValue(cfg.options.root_depth);
     for(const auto& r:cfg.rows){for(double v:{r.Ks,r.zs,r.theta_s,r.theta_r,r.alpha,r.psi_b,r.lambda,r.vg_n,r.vg_L,r.c_loss,r.hg0})hashValue(v);}
     for(const auto& r:cfg.vegetation){hashValue(r.scope);hashValue(r.tag);hashValue(r.cell);for(double v:{r.laimean,r.kc,r.sl,r.nfc,r.fc,r.wp,r.ks[0],r.ks[1],r.ks[2]})hashValue(v);hashValue(r.lai_pattern);hashValue(r.kc_pattern);}
+    for(const auto& r:cfg.irrigation){hashValue(r.scope);hashValue(r.tag);hashValue(r.cell);hashValue(r.depletion);hashValue(r.coeff);hashValue(r.pattern);hashValue(r.source);hashValue(r.hour);}
     for(const auto& r:cfg.surface_owners)hashValue(r.subcatch);
     for(std::size_t i=0;i<mesh.vx.size();++i){hashValue(mesh.vx[i]);hashValue(mesh.vy[i]);hashValue(mesh.vz[i]);}
     std::vector<Ring> cells(mesh.n_cells());
@@ -1125,6 +1164,20 @@ void writeSubsurfaceSections(const SubsurfaceConfig& cfg,
             if (r.ks[0] != 1.0 || r.ks[1] != 1.0 || r.ks[2] != 1.0)
                 line += "KS " + fmt(r.ks[0]) + " " + fmt(r.ks[1]) + " " + fmt(r.ks[2]) + " ";
             while (!line.empty() && line.back() == ' ') line.pop_back();
+            out += line; out += '\n';
+        }
+    }
+
+    if (!cfg.irrigation.empty()) {
+        out += "\n[2D_IRRIGATION]\n";
+        out += ";;Scope           DepletionFact IrrigationCoeff Pattern    SourceNode TriggerHour\n";
+        for (const auto& r : cfg.irrigation) {
+            std::string line;
+            if      (r.scope == 0) line = "*";
+            else if (r.scope == 1) line = "TAG  " + r.tag;
+            else                   line = "CELL " + std::to_string(r.cell + 1);
+            line.append(std::max<int>(1, 18 - int(line.size())), ' ');
+            line += fmt(r.depletion) + " " + fmt(r.coeff) + " " + r.pattern + " " + r.source + " " + std::to_string(r.hour);
             out += line; out += '\n';
         }
     }

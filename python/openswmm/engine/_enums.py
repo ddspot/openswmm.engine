@@ -1572,6 +1572,7 @@ class GroundwaterLedger(IntEnum):
     SOURCE_IN = 11
     SOURCE_OUT = 12
     REJECT = 13
+    IRRIGATION = 14
 
 
 class GroundwaterZone(IntEnum):

@@ -763,7 +763,8 @@ bool captureAquiferBlock(const SimulationContext& ctx, HotStartFile& hs) {
     hs.gw_ledger = {st->led_recharge, st->led_lateral, st->led_deep,
                     st->led_node,     st->led_dunne,   st->led_caprise,
                     st->led_et,       st->led_infil_in, st->led_init_storage,
-                    st->led_link, st->led_source_in, st->led_source_out, st->led_reject}; // Length-prefixed.
+                    st->led_link, st->led_source_in, st->led_source_out, st->led_reject,
+                    st->led_irrigation}; // Length-prefixed.
     hs.gw_interface = {st->infil_capacity, st->infil_remaining, st->infil_refresh, st->infil_interval, st->wetting_front, st->reject_last, st->reject_cumulative, st->dunne_cumulative, st->xacc_from_surface, st->xacc_to_surface, st->eacc_L, st->eacc_R, st->nacc, st->lacc};
     const auto* tr = ctx.twod_io.aquifer_transport;
     hs.gw_interface.push_back(tr ? tr->xacc_from_surface : std::vector<double>{});
@@ -961,6 +962,7 @@ void restoreAquiferBlock(const HotStartFile& hs, SimulationContext& ctx,
         st->led_init_storage = hs.gw_ledger[8];
         if (hs.gw_ledger.size() >= 10) st->led_link = hs.gw_ledger[9];
         if (hs.gw_ledger.size() >= 13) st->led_reject = hs.gw_ledger[12];
+        if (hs.gw_ledger.size() >= 14) st->led_irrigation = hs.gw_ledger[13];
         if (hs.gw_ledger.size() >= 12) {
             st->led_source_in = hs.gw_ledger[10];
             st->led_source_out = hs.gw_ledger[11];

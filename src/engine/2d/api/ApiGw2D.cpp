@@ -514,6 +514,7 @@ SWMM_ENGINE_API int swmm_gw2d_get_ledger(SWMM_Engine engine, int term,
         case SWMM_GW2D_LED_SOURCE_IN: *value = st.led_source_in; break;
         case SWMM_GW2D_LED_SOURCE_OUT: *value = st.led_source_out; break;
         case SWMM_GW2D_LED_LINK:         *value = st.led_link; break;   // G-X3
+        case SWMM_GW2D_LED_IRRIGATION:   *value = st.led_irrigation; break;
         default: return SWMM_ERR_BADPARAM;
     }
     return SWMM_OK;

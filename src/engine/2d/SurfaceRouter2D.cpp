@@ -1585,6 +1585,10 @@ void SurfaceRouter2D::coAdvanceStep(SimulationContext& ctx, double dt,
             vegetation_.refresh(ctx, subsurface_, state_, options_.evaporation != 0);
         }
         vegetation_.beforeAdvance(state_, rain_gross_, dt);
+        // [2D_IRRIGATION]: the daily check at the trigger hour; a dose leaves
+        // the source storage node (1D books it as irrigation outflow) and is
+        // delivered to the column top at the cell's next firing.
+        vegetation_.irrigate(ctx, subsurface_);
     }
 
     // Apply once per batch against the unforced base, never yesterday's
@@ -2662,6 +2666,8 @@ void SurfaceRouter2D::accumulateMassBalance(SimulationContext& ctx, double dt) {
         mb.canopy_intercepted = vegetation_.interceptedVolume();
         mb.canopy_evap_out = vegetation_.canopyEvapVolume();
         mb.canopy_storage = vegetation_.canopyStorageVolume();
+        mb.irrigation_in = vegetation_.irrigationVolume();
+        mb.irrigation_events = vegetation_.irrigationEvents();
     }
 
     // The CPU marcher records the applied evaporation after sharing the

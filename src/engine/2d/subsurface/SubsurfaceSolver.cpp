@@ -1040,6 +1040,21 @@ void SubsurfaceSolver::setBedSeepageFloor(int node, double rate_1d) noexcept {
     bed_seep_floor_[static_cast<std::size_t>(b)] = std::max(0.0, rate_1d) * v12;
 }
 
+double SubsurfaceSolver::rootZoneThickness(int cell, double root_depth_m) const noexcept {
+    if (!state_.active || cell < 0 || cell >= state_.n_cells) return 0.0;
+    const auto u = static_cast<std::size_t>(cell);
+    const auto cl = static_cast<GwClosure>(state_.closure[u]);
+    const double L = std::max(state_.zs[u] - state_.hg[u], 0.0);
+    if (cl != GwClosure::SIGMA || state_.m_layers <= 0 || L <= kTiny) return L;
+    if (!(root_depth_m > 0.0)) return L / static_cast<double>(state_.m_layers);
+    return std::min(root_depth_m, L);
+}
+
+void SubsurfaceSolver::bookIrrigation(int cell, double vol_m3) noexcept {
+    if (!state_.active || cell < 0 || cell >= state_.n_cells || !(vol_m3 > 0.0)) return;
+    state_.iacc[static_cast<std::size_t>(cell)] += vol_m3;
+}
+
 double SubsurfaceSolver::rootZoneTheta(int cell, double root_depth_m) const noexcept {
     if (!state_.active || cell < 0 || cell >= state_.n_cells) return 0.0;
     const auto u = static_cast<std::size_t>(cell);
@@ -1481,9 +1496,16 @@ void SubsurfaceSolver::fireCell(int i, double dt, SurfaceStateData& surf, double
     state_.qlink_last[u] = link_vol / dt;
     state_.led_link += link_vol;
 
+    state_.led_infil_in += infil_vol;
+    // Fork ([2D_IRRIGATION]): a dose delivered since the last firing joins the
+    // top inflow (same path as surface infiltration: into the column top,
+    // rejected to the surface if the layer will not take it) under its own
+    // ledger term.
+    const double irr_vol = consumePending(state_.iacc[u]);   // m³, + in
+    state_.led_irrigation += irr_vol;
+    infil_vol += irr_vol;
     const double q_in = infil_vol / (A * dt);                 // m/s at the top
     state_.qplus_last[u] = q_in;
-    state_.led_infil_in += infil_vol;
 
     // Surface-cadence demand has already paid actual surface evaporation.
     const bool et_boundary=(options_.gw_et=="BOUNDARY_ET"||options_.gw_et=="BOTH");
