@@ -165,6 +165,21 @@ struct GwOptions {
     /// units, converted at initialize().
     double root_depth = 0.0;
     bool root_depth_set = false;
+    /// UrbanEVA mesh route (fork): `THIN_COLUMN <len>` — a closure-B column whose
+    /// unsaturated zone is thinner than this is advanced as the hydrostatic
+    /// (ENSLAVED) closure until it grows back past twice the threshold. Near a
+    /// table within a few decimetres of the ground the σ layers are centimetres
+    /// thick and almost saturated: every table movement re-derives the bottom
+    /// layer below its hydrostatic content, the Darcy face refills it from the
+    /// table and the surplus cascades back — metres a year of gross exchange
+    /// booked as capillary rise, and a step limit of seconds. The hydrostatic
+    /// profile IS what those layers hold. Water is conserved at each switch
+    /// (the difference between column and hydrostatic storage goes to the
+    /// table), the ET drawn from the table is booked as capillary rise, and the
+    /// root-zone water content the vegetation law sees is the hydrostatic mean.
+    /// 0 (default) = off. Authored in project length units.
+    double thin_column = 0.0;
+    bool thin_column_set = false;
     /// G-X2: `NODE_ENROLMENT AUTO | ROWS`. AUTO (default, program plan
     /// §B.4b): every node whose [COORDINATES] fall in a mesh cell gets a bed
     /// (direct Darcy, the cell's area) unless a `[2D_AQUIFER_NODE]` row
@@ -285,6 +300,8 @@ struct SubsurfaceState {
     /// firing (m³), the `lacc` pattern — booked by MeshVegetation at the
     /// routing cadence, gathered at the cell's firing into the top inflow.
     std::vector<double>  iacc;
+    /// Fork (THIN_COLUMN): 1 while the cell's σ column is collapsed to the hydrostatic closure.
+    std::vector<int8_t>  thin;
 
     // ---- ledger (m³, cumulative) ----------------------------------------
     double led_recharge = 0.0;   ///< unsat → sat (negative = capillary rise)

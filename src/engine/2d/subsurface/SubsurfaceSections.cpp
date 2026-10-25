@@ -195,6 +195,12 @@ std::string parseAquiferOptionsLine(const std::vector<std::string>& tokens,
         if(!num(v,depth)||!std::isfinite(depth)||!(depth>=0.0))return "ROOT_DEPTH must be AUTO or a non-negative finite project length";
         opts.root_depth=depth;opts.root_depth_set=depth>0.0;return {};
     }
+    if (iequals(k,"THIN_COLUMN")) {                      // UrbanEVA mesh route: thin σ columns go hydrostatic
+        if(iequals(v,"NONE")||iequals(v,"OFF")){opts.thin_column=0.0;opts.thin_column_set=false;return {};}
+        double thick=0.0;
+        if(!num(v,thick)||!std::isfinite(thick)||!(thick>=0.0))return "THIN_COLUMN must be NONE or a non-negative finite project length";
+        opts.thin_column=thick;opts.thin_column_set=thick>0.0;return {};
+    }
     return "unknown option: " + k;
 }
 
@@ -928,7 +934,7 @@ SurfaceOwnershipPreview resolveSurfaceOwnership(const SimulationContext& ctx,con
     hashValue(ctx.options.ignore_routing);hashValue(cfg.options.per_subcatch);hashValue(int(ctx.files.runoff_mode));
     hashValue(ctx.options.water_age);hashValue(ctx.options.heat_transport);hashValue(opts.transport_msx);
     std::string aq;writeSubsurfaceSections(cfg,{}, {},aq,true);hashValue(aq);
-    hashValue(cfg.options.wilting_suction);hashValue(cfg.options.c_gw);hashValue(cfg.options.c_col);hashValue(cfg.options.root_depth);
+    hashValue(cfg.options.wilting_suction);hashValue(cfg.options.c_gw);hashValue(cfg.options.c_col);hashValue(cfg.options.root_depth);hashValue(cfg.options.thin_column);
     for(const auto& r:cfg.rows){for(double v:{r.Ks,r.zs,r.theta_s,r.theta_r,r.alpha,r.psi_b,r.lambda,r.vg_n,r.vg_L,r.c_loss,r.hg0})hashValue(v);}
     for(const auto& r:cfg.vegetation){hashValue(r.scope);hashValue(r.tag);hashValue(r.cell);for(double v:{r.laimean,r.kc,r.sl,r.nfc,r.fc,r.wp,r.ks[0],r.ks[1],r.ks[2]})hashValue(v);hashValue(r.lai_pattern);hashValue(r.kc_pattern);}
     for(const auto& r:cfg.irrigation){hashValue(r.scope);hashValue(r.tag);hashValue(r.cell);hashValue(r.depletion);hashValue(r.coeff);hashValue(r.pattern);hashValue(r.source);hashValue(r.hour);}
@@ -1095,6 +1101,7 @@ void writeSubsurfaceSections(const SubsurfaceConfig& cfg,
         if (cfg.options.gw_et != d.gw_et) kv("GW_ET", cfg.options.gw_et);
         if(cfg.options.wilting_suction_set)kv("WILTING_SUCTION",fmt(cfg.options.wilting_suction));
         if(cfg.options.root_depth_set)kv("ROOT_DEPTH",fmt(cfg.options.root_depth));
+        if(cfg.options.thin_column_set)kv("THIN_COLUMN",fmt(cfg.options.thin_column));
         if (cfg.options.node_auto != d.node_auto)
             kv("NODE_ENROLMENT", cfg.options.node_auto ? "AUTO" : "ROWS");   // G-X2
         if (cfg.options.link_seepage != d.link_seepage)                    // G-X3/G-X4

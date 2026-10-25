@@ -38,7 +38,7 @@ void SubsurfaceSolver::checkpoint(detail::CompletedSourceArchive& a,bool model) 
             s.reject_last,s.reject_cumulative,s.dunne_cumulative,s.et_pending,s.et_potential_cumulative,
             s.et_surface_cumulative,s.et_soil_cumulative,s.et_unused_cumulative,s.et_surface_last,
             s.et_potential_last,s.et_stress,s.et_refresh,s.qlink_last,s.dt_cell,s.tier,s.eacc_L,s.eacc_R,
-            s.xacc_from_surface,s.xacc_to_surface,s.nacc,s.lacc,s.iacc);
+            s.xacc_from_surface,s.xacc_to_surface,s.nacc,s.lacc,s.iacc,s.thin);
 
     a(s.led_recharge,s.led_lateral,s.led_deep,s.led_node,s.led_reject,s.led_dunne,s.led_caprise,s.led_et,
       s.led_infil_in,s.led_link,s.led_subcatch_in,s.led_init_storage,s.led_final_storage,s.led_source_in,s.led_source_out,s.led_irrigation);

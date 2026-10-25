@@ -213,7 +213,7 @@ void SubsurfaceSolver::resolveClosures(std::vector<std::string>& warnings) {
     long n_ens = 0, n_cf = 0, n_sig = 0;
     for (int i = 0; i < state_.n_cells; ++i) {
         const auto u = static_cast<std::size_t>(i);
-        auto c = static_cast<GwClosure>(state_.closure[u]);
+        auto c = effectiveClosure(u);
         if (c == GwClosure::AUTO) {
             const double L  = std::max(state_.zs[u] - state_.hg[u], kTiny);
             const double aL = soil::alphaL(paramsOf(i), L);
@@ -253,6 +253,7 @@ std::string SubsurfaceSolver::initialize(const MeshData& mesh,
     if(options_.link_seepage==GwLinkMode::DEFAULT)options_.link_seepage=options_.per_subcatch?GwLinkMode::AUTO:GwLinkMode::TWO_WAY;
     options_.wilting_suction=cfg.options.wilting_suction_set?cfg.options.wilting_suction*uf.length:150.0;
     options_.root_depth=cfg.options.root_depth_set?std::max(0.0,cfg.options.root_depth*uf.length):0.0;
+    options_.thin_column=cfg.options.thin_column_set?std::max(0.0,cfg.options.thin_column*uf.length):0.0;
     node_beds_ = cfg.node_beds;
     mesh_  = &mesh;
     edges_ = &edges;
@@ -275,7 +276,7 @@ std::string SubsurfaceSolver::initialize(const MeshData& mesh,
         const auto u = static_cast<std::size_t>(i);
         const double L = std::max(state_.zs[u] - state_.hg[u], 0.0);
         const soil::Params p = paramsOf(i);
-        if (static_cast<GwClosure>(state_.closure[u]) == GwClosure::SIGMA) {
+        if (effectiveClosure(u) == GwClosure::SIGMA) {
             sigma::seedHydrostatic(p, &state_.theta_sigma[u], state_.m_layers,
                                    n, L);
             state_.hu[u] = sigma::columnStorage(&state_.theta_sigma[u],
@@ -408,7 +409,7 @@ void SubsurfaceSolver::refreshDtCell(const MeshData& mesh,
 
         // --- Δt_u: the column's own bound --------------------------------
         double dt_u = 1.0e30;
-        const auto cl = static_cast<GwClosure>(state_.closure[u]);
+        const auto cl = effectiveClosure(u);
         if (cl == GwClosure::SIGMA) {
             // L̇ is unknown before the step; use the previous firing's table
             // velocity implied by q0_last, which is the term that actually
@@ -793,7 +794,7 @@ void SubsurfaceSolver::sampleNodeExchange(const NodeData* nodes, double dt) {
             const double Sy_col = specificYield(
                 ci, paramsOf(bed.cell), state_.theta_s[ci],
                 std::max(state_.zs[ci] - state_.hg[ci], 0.0),
-                static_cast<GwClosure>(state_.closure[ci]), nullptr);
+                effectiveClosure(ci), nullptr);
             const double avail = state_.hg[ci] * Sy_col * state_.area[ci];
             // G-W1b (2026-09-23): count the firings this cap actually
             // CLAMPS. A gate needs to prove its own deck exercises the cap
@@ -854,7 +855,7 @@ void SubsurfaceSolver::sampleNodeExchange(const NodeData* nodes, double dt) {
             const double Sy_col = specificYield(
                 ci, paramsOf(bed.cell), state_.theta_s[ci],
                 std::max(state_.zs[ci] - state_.hg[ci], 0.0),
-                static_cast<GwClosure>(state_.closure[ci]), nullptr);
+                effectiveClosure(ci), nullptr);
             const double avail = state_.hg[ci] * Sy_col * state_.area[ci];
             const double cap = std::max(0.0, kFaceShare * avail / std::max(dt, kTiny) - std::max(0.0, Q));
             const double booked = std::min(q_up, cap);
@@ -972,7 +973,7 @@ double SubsurfaceSolver::specificYieldOf(int cell) const noexcept {
     if (u >= state_.hg.size()) return 0.0;
     return specificYield(u, paramsOf(cell), state_.theta_s[u],
                          std::max(state_.zs[u] - state_.hg[u], 0.0),
-                         static_cast<GwClosure>(state_.closure[u]), nullptr);
+                         effectiveClosure(u), nullptr);
 }
 
 double SubsurfaceSolver::gatherNode(int i) noexcept {
@@ -1043,7 +1044,7 @@ void SubsurfaceSolver::setBedSeepageFloor(int node, double rate_1d) noexcept {
 double SubsurfaceSolver::rootZoneThickness(int cell, double root_depth_m) const noexcept {
     if (!state_.active || cell < 0 || cell >= state_.n_cells) return 0.0;
     const auto u = static_cast<std::size_t>(cell);
-    const auto cl = static_cast<GwClosure>(state_.closure[u]);
+    const auto cl = effectiveClosure(u);
     const double L = std::max(state_.zs[u] - state_.hg[u], 0.0);
     if (cl != GwClosure::SIGMA || state_.m_layers <= 0 || L <= kTiny) return L;
     if (!(root_depth_m > 0.0)) return L / static_cast<double>(state_.m_layers);
@@ -1058,8 +1059,16 @@ void SubsurfaceSolver::bookIrrigation(int cell, double vol_m3) noexcept {
 double SubsurfaceSolver::rootZoneTheta(int cell, double root_depth_m) const noexcept {
     if (!state_.active || cell < 0 || cell >= state_.n_cells) return 0.0;
     const auto u = static_cast<std::size_t>(cell);
-    const auto cl = static_cast<GwClosure>(state_.closure[u]);
+    const auto cl = effectiveClosure(u);
     const double L = std::max(state_.zs[u] - state_.hg[u], 0.0);
+    if (state_.thin[u] && L > kTiny) {
+        // THIN_COLUMN: the hydrostatic profile θ(ψ = L − z) averaged over the root zone
+        const soil::Params p = paramsOf(cell);
+        const double depth = root_depth_m > 0.0 ? std::min(root_depth_m, L) : L;
+        double s = 0.0; const int k = 16;
+        for (int j = 0; j < k; ++j) s += soil::waterContent(p, std::max(L - (j + 0.5) * depth / k, 0.0));
+        return std::clamp(s / k, state_.theta_r[u], state_.theta_s[u]);
+    }
     if (cl != GwClosure::SIGMA || state_.m_layers <= 0 || L <= kTiny)
         return L > kTiny ? std::clamp(state_.hu[u] / L, state_.theta_r[u], state_.theta_s[u]) : state_.theta_s[u];
     const int m = state_.m_layers;
@@ -1112,7 +1121,7 @@ double SubsurfaceSolver::drawLidCapillary(int node, double demand_1d, double inv
     const double Sy = specificYield(
         static_cast<int>(ci), paramsOf(static_cast<int>(ci)), state_.theta_s[ci],
         std::max(state_.zs[ci] - state_.hg[ci], 0.0),
-        static_cast<GwClosure>(state_.closure[ci]), nullptr);
+        effectiveClosure(ci), nullptr);
     double avail = kFaceShare * state_.hg[ci] * Sy * state_.area[ci];
     for (const auto ob : cell_beds_[ci]) {
         avail -= std::max(0.0, state_.nacc[ob]);
@@ -1300,7 +1309,7 @@ double SubsurfaceSolver::infiltrationHeadroom(int cell) const noexcept {
     const auto u = static_cast<std::size_t>(cell);
     const double L = std::max(0.0, state_.zs[u] - state_.hg[u]);
     double col = state_.hu[u];
-    const auto cl = static_cast<GwClosure>(state_.closure[u]);
+    const auto cl = effectiveClosure(u);
     if (cl == GwClosure::ENSLAVED) col = soil::equilibriumStorage(paramsOf(cell), L);
     if (cl == GwClosure::SIGMA) col = sigma::columnStorage(&state_.theta_sigma[u], state_.m_layers, state_.n_cells, L);
     double deficit = std::max(0.0, (state_.theta_s[u] * L - col) * state_.area[u]);
@@ -1345,7 +1354,7 @@ double SubsurfaceSolver::sourceInfiltrationCapacity(int i, double pond, double i
         double rate = 0.0;
         if (A > 0.0 && L > 0.0) {
             const auto p = paramsOf(i);
-            const auto cl = static_cast<GwClosure>(state_.closure[u]);
+            const auto cl = effectiveClosure(u);
             if (cl == GwClosure::SIGMA) {
                 const double Se = std::clamp((state_.theta_sigma[u] - p.theta_r) / (p.theta_s - p.theta_r), 1e-6, 1.0);
                 const double suction = soil::suctionAtSaturation(p, Se);
@@ -1459,11 +1468,30 @@ void SubsurfaceSolver::fireCell(int i, double dt, SurfaceStateData& surf, double
     const double zs = state_.zs[u];
     const double ts = state_.theta_s[u];
     const soil::Params p = paramsOf(i);
-    const auto cl = static_cast<GwClosure>(state_.closure[u]);
-
     const double hg0 = state_.hg[u];
-    const double hu_pre = state_.hu[u];   // T7.1: the column store this firing starts from
     const double L0  = std::max(zs - hg0, 0.0);
+    // Fork (THIN_COLUMN): collapse a thin σ column to the hydrostatic closure,
+    // and restore it with hysteresis, conserving water at the switch — the
+    // difference between the column's storage and the hydrostatic storage
+    // is handed to the table in this firing (`switch_adjust_m`, m of water).
+    double switch_adjust_m = 0.0;
+    if (options_.thin_column > 0.0 && static_cast<GwClosure>(state_.closure[u]) == GwClosure::SIGMA && state_.m_layers > 0) {
+        if (!state_.thin[u] && L0 < options_.thin_column) {
+            const double col = sigma::columnStorage(&state_.theta_sigma[u], state_.m_layers, n, L0);
+            switch_adjust_m = col - soil::equilibriumStorage(p, L0);
+            state_.thin[u] = 1;
+            state_.hu[u] = soil::equilibriumStorage(p, L0);
+        } else if (state_.thin[u] && L0 > 2.0 * options_.thin_column) {
+            const double held = soil::equilibriumStorage(p, L0);
+            sigma::seedHydrostatic(p, &state_.theta_sigma[u], state_.m_layers, n, L0);
+            const double col = sigma::columnStorage(&state_.theta_sigma[u], state_.m_layers, n, L0);
+            switch_adjust_m = held - col;
+            state_.thin[u] = 0;
+            state_.hu[u] = col;
+        }
+    }
+    const auto cl = effectiveClosure(u);
+    const double hu_pre = state_.hu[u];   // T7.1: the column store this firing starts from
 
     // Verify the paired queue before any cell/face gather. Unpaired or future
     // receipts cannot be consumed by an owned cell's groundwater firing.
@@ -1699,7 +1727,7 @@ void SubsurfaceSolver::fireCell(int i, double dt, SurfaceStateData& surf, double
     }
     state_.led_source_in += source.in;
     state_.led_source_out += source.out;
-    const double dV_sat = other_sat + source.in - source.out;
+    const double dV_sat = other_sat + source.in - source.out + switch_adjust_m * A;   // + the thin-column switch
     double hg1 = hg0 + dV_sat / (Sy * A);
 
     // G1-c (2026-09-19): the ENSLAVED solve is BRACKETED. The Newton it
@@ -1789,6 +1817,7 @@ void SubsurfaceSolver::fireCell(int i, double dt, SurfaceStateData& surf, double
     }
     state_.led_recharge += q0 * A * dt;
     if (cl!=GwClosure::ENSLAVED && q0 < 0.0) state_.led_caprise += -q0 * A * dt;
+    if (cl==GwClosure::ENSLAVED && state_.thin[u] && q_et > 0.0) state_.led_caprise += q_et * A * dt;   // THIN_COLUMN: the table feeds the ET
     state_.led_deep += state_.qdeep_last[u] * A * dt;
     state_.led_lateral += lat_vol;
     {
@@ -1816,7 +1845,7 @@ void SubsurfaceSolver::fireCell(int i, double dt, SurfaceStateData& surf, double
         original.resize(state_.m_layers);trial.resize(state_.m_layers);
         for(int j=0;j<state_.m_layers;++j) original[j]=state_.theta_sigma[static_cast<std::size_t>(j)*n+u];
         sigma::ColumnStep cs;
-        double external=(lat_vol-node_vol+link_vol+source.in-source.out)/A-state_.qdeep_last[u]*dt;
+        double external=(lat_vol-node_vol+link_vol+source.in-source.out)/A-state_.qdeep_last[u]*dt+switch_adjust_m;
         const double tolerance=1e-15*std::max({1.0,zs,std::abs(external)});
         const auto evaluate=[&](double h) {
             trial=original;cs={};cs.L_old=L0;cs.L_new=std::max(0.0,zs-h);cs.dt=dt;

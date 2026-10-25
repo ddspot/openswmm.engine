@@ -319,6 +319,18 @@ flux it carries is already bounded by the positivity share, so a step that is fo
 for it oscillates within the layer's own store and conserves; the floor caps the cost, not the
 mass.
 
+**Thin columns go hydrostatic (same fork, `THIN_COLUMN <len>`).** A closure-B column whose
+unsaturated zone is thinner than the threshold is advanced as `ENSLAVED` until it grows back past
+twice the threshold. With the table a few decimetres below the ground the σ layers are centimetres
+thick and almost saturated: a tiny volume moves the table, every move re-derives the bottom layer
+below its hydrostatic content, the Darcy face refills it from the table and the surplus cascades
+back — on a Halle block fully disconnected this booked 2.4 m/yr of gross "capillary rise" against
+−0.9 m/yr of recharge (net clean) at a step limit of seconds. Inside the capillary fringe the
+hydrostatic profile *is* the column's state. The switch conserves water (the difference between the
+column's and the hydrostatic storage is handed to the table in that firing), the ET the table then
+feeds is booked as capillary rise, and the root-zone water content the vegetation law reads is the
+hydrostatic mean over the root depth. Default off; 0.3 m is the block recipe.
+
 **Capillary rise across the table (same fork).** Under `GW_ET CAPILLARY_RISE` or
 `BOTH` the bottom face carries the full Darcy flux between the table (\f$\psi = 0\f$)
 and the bottom layer's centre, \f$dz/2\f$ above it, downward positive:

@@ -83,6 +83,7 @@ void SubsurfaceState::resize(int n, int m) {
     xacc_to_surface.assign(nn, 0.0);
     lacc.assign(nn, 0.0);         // G-X3
     iacc.assign(nn, 0.0);         // fork: [2D_IRRIGATION]
+    thin.assign(nn, 0);           // fork: THIN_COLUMN
     // eacc_L/R and nacc are sized by the solver against the edge and node
     // counts, which this struct deliberately does not know.
 }
@@ -96,7 +97,7 @@ double SubsurfaceState::storage() const noexcept {
     for (int i = 0; i < n_cells; ++i) {
         const auto u = static_cast<std::size_t>(i);
         double col = 0.0;
-        if (closure[u] == static_cast<int8_t>(GwClosure::SIGMA)) {
+        if (closure[u] == static_cast<int8_t>(GwClosure::SIGMA) && !thin[u]) {
             const double L = zs[u] - hg[u];
             const double Ldsig = (L > 0.0 ? L : 0.0) * dsig;
             for (int j = 0; j < m_layers; ++j) {

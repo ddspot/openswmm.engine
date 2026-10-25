@@ -365,6 +365,11 @@ public:
     const std::vector<GwNodeBed>& nodeBeds() const noexcept { return node_beds_; }
     /// `[2D_AQUIFER_OPTIONS] ROOT_DEPTH` in metres (0 = top layer only).
     double rootDepth() const noexcept { return options_.root_depth; }
+    /// Fork (THIN_COLUMN): the closure the cell is advanced with NOW — the
+    /// authored one, or ENSLAVED while its σ column is collapsed as too thin.
+    GwClosure effectiveClosure(std::size_t u) const noexcept {
+        return state_.thin[u] ? GwClosure::ENSLAVED : static_cast<GwClosure>(state_.closure[u]);
+    }
     /// Fork ([2D_IRRIGATION]): the thickness the root-zone θ of `rootZoneTheta`
     /// averages over — `min(root_depth, L)` on a SIGMA column, the top layer
     /// without ROOT_DEPTH, the whole unsaturated zone on the other closures (m).
